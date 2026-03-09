@@ -1,6 +1,6 @@
 ## js-in-vue
 
-### Option 1: 94/95 (98.95%)
+### Option 1: 99/100 (99.00%)
 
 ```json
 {"printWidth":80}
@@ -10,7 +10,7 @@
 | :--- | :--- |
 | vue/multiparser/lang-tsx.vue | `lang=tsx` is not supported |
 
-### Option 2: 94/95 (98.95%)
+### Option 2: 99/100 (99.00%)
 
 ```json
 {"printWidth":100,"vueIndentScriptAndStyle":true,"singleQuote":true}
