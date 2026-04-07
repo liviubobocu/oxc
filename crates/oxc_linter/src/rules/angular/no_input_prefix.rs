@@ -2,6 +2,7 @@ use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
@@ -24,7 +25,7 @@ fn no_input_prefix_diagnostic(span: Span, prefix: &str) -> OxcDiagnostic {
         .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct NoInputPrefixConfig {
     /// Prefixes that should not be used for input names
@@ -107,7 +108,8 @@ declare_oxc_lint!(
     NoInputPrefix,
     angular,
     style,
-    pending
+    pending,
+    config = NoInputPrefixConfig
 );
 
 impl Rule for NoInputPrefix {

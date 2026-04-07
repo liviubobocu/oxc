@@ -2,6 +2,7 @@ use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
@@ -24,7 +25,7 @@ fn pipe_prefix_diagnostic(span: Span, prefixes: &[String]) -> OxcDiagnostic {
         .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct PipePrefixConfig {
     #[serde(default)]
@@ -98,7 +99,8 @@ declare_oxc_lint!(
     PipePrefix,
     angular,
     pedantic,
-    pending
+    pending,
+    config = PipePrefixConfig
 );
 
 impl Rule for PipePrefix {
