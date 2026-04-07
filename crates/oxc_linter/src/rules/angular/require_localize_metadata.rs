@@ -2,6 +2,7 @@ use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{AstNode, context::LintContext, rule::Rule};
@@ -35,7 +36,7 @@ fn require_localize_custom_id_diagnostic(span: Span, pattern_message: &str) -> O
     .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 #[expect(clippy::struct_field_names)]
 pub struct RequireLocalizeMetadataConfig {
@@ -47,7 +48,7 @@ pub struct RequireLocalizeMetadataConfig {
     require_custom_id: RequireCustomIdOption,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RequireCustomIdOption {
     #[default]
@@ -135,7 +136,8 @@ declare_oxc_lint!(
     RequireLocalizeMetadata,
     angular,
     pedantic,
-    pending
+    pending,
+    config = RequireLocalizeMetadataConfig
 );
 
 impl Rule for RequireLocalizeMetadata {
