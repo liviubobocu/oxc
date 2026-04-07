@@ -28,6 +28,17 @@ fn contextual_decorator_diagnostic(
     .with_label(span)
 }
 
+fn contextual_decorator_non_angular_diagnostic(span: Span, decorator_name: &str) -> OxcDiagnostic {
+    OxcDiagnostic::warn(format!(
+        "`@{decorator_name}` cannot be used in a class without an Angular decorator"
+    ))
+    .with_help(format!(
+        "The `@{decorator_name}` decorator is only valid in @Component or @Directive classes. \
+        Add an Angular decorator to the class or remove the `@{decorator_name}` decorator."
+    ))
+    .with_label(span)
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ContextualDecorator;
 
@@ -120,6 +131,11 @@ impl Rule for ContextualDecorator {
 
         // Get the class's Angular decorator
         let Some((class_decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
+            // No Angular decorator - report error
+            ctx.diagnostic(contextual_decorator_non_angular_diagnostic(
+                decorator.span,
+                decorator_name,
+            ));
             return;
         };
 
@@ -262,6 +278,13 @@ fn test() {
         @Pipe({ name: 'test' })
         class TestPipe {
             @ContentChild('content') content: ElementRef;
+        }
+        ",
+        // @Input in non-Angular class
+        r"
+        import { Input } from '@angular/core';
+        class NotAComponent {
+            @Input() value: string;
         }
         ",
     ];

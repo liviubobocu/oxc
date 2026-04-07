@@ -55,3 +55,12 @@ source: crates/oxc_linter/src/tester.rs
  9 │         }
    ╰────
   help: Remove `ngDoBootstrap` or move the class to an appropriate Angular class type that supports this lifecycle method
+
+  ⚠ angular(contextual-lifecycle): Lifecycle method `ngOnInit` is used in a class without an Angular decorator
+   ╭─[contextual_lifecycle.tsx:3:13]
+ 2 │         class TestClass {
+ 3 │             ngOnInit() {}
+   ·             ─────────────
+ 4 │         }
+   ╰────
+  help: Add an Angular decorator (@Component, @Directive, @Injectable, @Pipe, or @NgModule) to the class, or remove the `ngOnInit` method if it's not meant to be an Angular lifecycle hook

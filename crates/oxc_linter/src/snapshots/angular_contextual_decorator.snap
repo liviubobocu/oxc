@@ -46,3 +46,12 @@ source: crates/oxc_linter/src/tester.rs
  6 │         }
    ╰────
   help: The `@ContentChild` decorator is not valid in a class decorated with `@Pipe`. This decorator is only allowed in @Component or @Directive classes.
+
+  ⚠ angular(contextual-decorator): `@Input` cannot be used in a class without an Angular decorator
+   ╭─[contextual_decorator.tsx:4:13]
+ 3 │         class NotAComponent {
+ 4 │             @Input() value: string;
+   ·             ────────
+ 5 │         }
+   ╰────
+  help: The `@Input` decorator is only valid in @Component or @Directive classes. Add an Angular decorator to the class or remove the `@Input` decorator.

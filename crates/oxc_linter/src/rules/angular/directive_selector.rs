@@ -2,6 +2,7 @@ use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
@@ -36,7 +37,7 @@ fn directive_selector_style_diagnostic(span: Span, expected: &str) -> OxcDiagnos
         .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct DirectiveSelectorConfig {
     #[serde(default)]
@@ -47,7 +48,7 @@ pub struct DirectiveSelectorConfig {
     style: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
 #[serde(untagged)]
 pub enum PrefixConfig {
     Single(String),
@@ -158,7 +159,8 @@ declare_oxc_lint!(
     DirectiveSelector,
     angular,
     pedantic,
-    pending
+    pending,
+    config = DirectiveSelectorConfig
 );
 
 impl Rule for DirectiveSelector {
