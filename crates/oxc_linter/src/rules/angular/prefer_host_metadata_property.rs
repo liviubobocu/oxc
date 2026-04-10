@@ -8,7 +8,7 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        AngularDecoratorType, get_class_angular_decorator, get_decorator_identifier,
+        get_decorator_identifier,
         get_decorator_name, is_angular_core_import,
     },
 };
@@ -108,37 +108,10 @@ impl Rule for PreferHostMetadataProperty {
             return;
         }
 
-        // Find the parent class
-        let Some(class) = get_parent_class(node, ctx) else {
-            return;
-        };
-
-        // Check if the class has a @Component or @Directive decorator
-        let Some((decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
-            return;
-        };
-
-        if !matches!(
-            decorator_type,
-            AngularDecoratorType::Component | AngularDecoratorType::Directive
-        ) {
-            return;
-        }
-
+        // Report on any @HostBinding or @HostListener decorator
+        // (The original angular-eslint rule does not check if the class is a Component/Directive)
         ctx.diagnostic(prefer_host_metadata_property_diagnostic(decorator.span, decorator_name));
     }
-}
-
-fn get_parent_class<'a, 'b>(
-    node: &'b AstNode<'a>,
-    ctx: &'b LintContext<'a>,
-) -> Option<&'b oxc_ast::ast::Class<'a>> {
-    for ancestor in ctx.nodes().ancestors(node.id()) {
-        if let AstKind::Class(class) = ancestor.kind() {
-            return Some(class);
-        }
-    }
-    None
 }
 
 #[test]
