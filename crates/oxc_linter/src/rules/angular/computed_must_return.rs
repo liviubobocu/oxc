@@ -107,14 +107,14 @@ impl Rule for ComputedMustReturn {
 
                 // Check if the function body has a return statement
                 if !has_return_statement(&arrow.body) {
-                    ctx.diagnostic(computed_must_return_diagnostic(arrow.span));
+                    ctx.diagnostic(computed_must_return_diagnostic(call_expr.span));
                 }
             }
             oxc_ast::ast::Argument::FunctionExpression(func) => {
                 // Check if the function body has a return statement
                 if let Some(body) = &func.body
                     && !has_return_statement_in_body(body) {
-                        ctx.diagnostic(computed_must_return_diagnostic(func.span));
+                        ctx.diagnostic(computed_must_return_diagnostic(call_expr.span));
                     }
             }
             _ => {}
