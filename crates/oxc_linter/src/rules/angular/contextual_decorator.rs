@@ -8,7 +8,7 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        AngularDecoratorType, get_class_angular_decorator, get_decorator_name
+        AngularDecoratorType, get_decorator_name, get_decorator_type
 }
 };
 
@@ -87,7 +87,8 @@ declare_oxc_lint!(
 );
 
 /// Decorators that are only valid in @Component and @Directive
-const COMPONENT_DIRECTIVE_ONLY_DECORATORS: [&str; 8] = [
+const COMPONENT_DIRECTIVE_ONLY_DECORATORS: [&str; 9] = [
+    "Attribute",
     "Input",
     "Output",
     "HostBinding",
@@ -119,9 +120,17 @@ impl Rule for ContextualDecorator {
             return;
         };
 
-        // Get the class's Angular decorator
-        let Some((class_decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
-            // No Angular decorator - report error
+        // Get the class's Angular decorator name without import verification
+        let class_decorator_name = class.decorators
+            .iter()
+            .find_map(|dec| {
+                let name = get_decorator_name(dec)?;
+                get_decorator_type(name).map(|_| name)
+            });
+
+        let Some(class_decorator_type) = class_decorator_name
+            .and_then(|name| get_decorator_type(name))
+        else {
             ctx.diagnostic(contextual_decorator_non_angular_diagnostic(
                 decorator.span,
                 decorator_name,

@@ -5,7 +5,7 @@
 use oxc_ast::{
     AstKind,
     ast::{
-        Argument, CallExpression, Decorator, Expression, ObjectExpression, ObjectPropertyKind,
+        Argument, CallExpression, Class, Decorator, Expression, ObjectExpression, ObjectPropertyKind,
         PropertyKey,
     },
 };
@@ -546,6 +546,40 @@ pub fn get_class_angular_decorator<'a, 'b>(
         if is_angular_core_import(ident, ctx) {
             return Some((decorator_type, decorator));
         }
+    }
+    None
+}
+
+/// Get an Angular decorator on a class without verifying the import source.
+/// This matches ESLint's behavior which only checks decorator names, not imports.
+/// Returns the decorator type and the decorator AST node if found.
+pub fn get_class_angular_decorator_lenient<'a, 'b>(
+    class: &'b Class<'a>,
+    _ctx: &'b LintContext<'a>,
+) -> Option<(AngularDecoratorType, &'b Decorator<'a>)> {
+    use AngularDecoratorType::{Component, Directive, Injectable, Pipe};
+
+    for decorator in &class.decorators {
+        let Expression::CallExpression(call_expr) = &decorator.expression else {
+            continue;
+        };
+
+        let Expression::Identifier(ident) = &call_expr.callee else {
+            continue;
+        };
+
+        let decorator_type = match ident.name.as_str() {
+            "Component" => Component,
+            "Directive" => Directive,
+            "Injectable" => Injectable,
+            "Pipe" => Pipe,
+            _ => continue,
+        };
+
+        // Note: Unlike get_class_angular_decorator, we do NOT verify
+        // that the decorator is imported from @angular/core.
+        // This matches ESLint's name-based matching behavior.
+        return Some((decorator_type, decorator));
     }
     None
 }

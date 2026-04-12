@@ -27,17 +27,6 @@ fn contextual_lifecycle_diagnostic(
     .with_label(span)
 }
 
-fn contextual_lifecycle_non_angular_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {
-    OxcDiagnostic::warn(format!(
-        "Lifecycle method `{method_name}` is used in a class without an Angular decorator"
-    ))
-    .with_help(format!(
-        "Add an Angular decorator (@Component, @Directive, @Injectable, @Pipe, or @NgModule) to the class, \
-        or remove the `{method_name}` method if it's not meant to be an Angular lifecycle hook"
-    ))
-    .with_label(span)
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct ContextualLifecycle;
 
@@ -110,12 +99,7 @@ impl Rule for ContextualLifecycle {
 
         // Check if the class has an Angular decorator and get its type
         let Some((decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
-            // No Angular decorator - report error for lifecycle method in non-Angular class
-            ctx.diagnostic(contextual_lifecycle_non_angular_diagnostic(
-                method.span,
-                &method_name,
-            ));
-            return;
+            return;  // Just return - ESLint doesn't check non-Angular classes
         };
 
         // Check if the lifecycle method is valid for this decorator type
@@ -270,12 +254,6 @@ fn test() {
         })
         class TestComponent implements DoBootstrap {
             ngDoBootstrap() {}
-        }
-        ",
-        // Non-Angular class with lifecycle method (invalid)
-        r"
-        class TestClass {
-            ngOnInit() {}
         }
         ",
     ];

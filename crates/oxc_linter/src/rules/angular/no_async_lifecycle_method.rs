@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, is_lifecycle_method}
+    utils::{get_class_angular_decorator_lenient, is_lifecycle_method}
 };
 
 fn no_async_lifecycle_method_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {
@@ -103,7 +103,8 @@ impl Rule for NoAsyncLifecycleMethod {
         };
 
         // Check if the class has an Angular decorator
-        if get_class_angular_decorator(class, ctx).is_none() {
+        // Note: Using lenient matching (name-only, no import verification) to match ESLint behavior
+        if get_class_angular_decorator_lenient(class, ctx).is_none() {
             return;
         }
 

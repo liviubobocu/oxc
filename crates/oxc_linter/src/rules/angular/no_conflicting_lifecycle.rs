@@ -1,12 +1,34 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
-use crate::{AstNode, context::LintContext, rule::Rule, utils::get_class_angular_decorator};
+use crate::{AstNode, context::LintContext, rule::Rule};
 
 fn no_conflicting_lifecycle_diagnostic(span: Span) -> OxcDiagnostic {
     OxcDiagnostic::warn("Class implements both `DoCheck` and `OnChanges` lifecycle interfaces")
+        .with_help(
+            "Implementing both `DoCheck` and `OnChanges` can lead to unexpected behavior. \
+            `ngOnChanges` is called when input properties change, while `ngDoCheck` is called \
+            during every change detection cycle. Choose one based on your needs: use `ngOnChanges` \
+            for reacting to input changes, or `ngDoCheck` for custom change detection logic.",
+        )
+        .with_label(span)
+}
+
+fn no_conflicting_lifecycle_interface_diagnostic(span: Span) -> OxcDiagnostic {
+    OxcDiagnostic::warn("Implementing both `DoCheck` and `OnChanges` is not recommended")
+        .with_help(
+            "Implementing both `DoCheck` and `OnChanges` can lead to unexpected behavior. \
+            `ngOnChanges` is called when input properties change, while `ngDoCheck` is called \
+            during every change detection cycle. Choose one based on your needs: use `ngOnChanges` \
+            for reacting to input changes, or `ngDoCheck` for custom change detection logic.",
+        )
+        .with_label(span)
+}
+
+fn no_conflicting_lifecycle_method_diagnostic(span: Span) -> OxcDiagnostic {
+    OxcDiagnostic::warn("Implementing both `DoCheck` and `OnChanges` is not recommended")
         .with_help(
             "Implementing both `DoCheck` and `OnChanges` can lead to unexpected behavior. \
             `ngOnChanges` is called when input properties change, while `ngDoCheck` is called \
@@ -80,20 +102,25 @@ impl Rule for NoConflictingLifecycle {
             return;
         };
 
-        // Check if the class has an Angular decorator
-        if get_class_angular_decorator(class, ctx).is_none() {
-            return;
-        }
-
         let mut has_do_check = false;
         let mut has_on_changes = false;
+        let mut do_check_interface_spans = Vec::new();
+        let mut on_changes_interface_spans = Vec::new();
+        let mut do_check_method_spans = Vec::new();
+        let mut on_changes_method_spans = Vec::new();
 
         // Check implemented interfaces
         for ts_impl in &class.implements {
             if let oxc_ast::ast::TSTypeName::IdentifierReference(ident) = &ts_impl.expression {
                 match ident.name.as_str() {
-                    "DoCheck" => has_do_check = true,
-                    "OnChanges" => has_on_changes = true,
+                    "DoCheck" => {
+                        has_do_check = true;
+                        do_check_interface_spans.push(ident.span);
+                    }
+                    "OnChanges" => {
+                        has_on_changes = true;
+                        on_changes_interface_spans.push(ident.span);
+                    }
                     _ => {}
                 }
             }
@@ -104,17 +131,35 @@ impl Rule for NoConflictingLifecycle {
             if let oxc_ast::ast::ClassElement::MethodDefinition(method) = element
                 && let Some(name) = method.key.static_name() {
                     match name.as_ref() {
-                        "ngDoCheck" => has_do_check = true,
-                        "ngOnChanges" => has_on_changes = true,
+                        "ngDoCheck" => {
+                            has_do_check = true;
+                            do_check_method_spans.push(method.key.span());
+                        }
+                        "ngOnChanges" => {
+                            has_on_changes = true;
+                            on_changes_method_spans.push(method.key.span());
+                        }
                         _ => {}
                     }
                 }
         }
 
         if has_do_check && has_on_changes {
-            // Report on the class name or the class keyword
-            let span = class.id.as_ref().map_or(class.span, |id| id.span);
-            ctx.diagnostic(no_conflicting_lifecycle_diagnostic(span));
+            // Report on each interface
+            for span in do_check_interface_spans {
+                ctx.diagnostic(no_conflicting_lifecycle_interface_diagnostic(span));
+            }
+            for span in on_changes_interface_spans {
+                ctx.diagnostic(no_conflicting_lifecycle_interface_diagnostic(span));
+            }
+
+            // Report on each method
+            for span in do_check_method_spans {
+                ctx.diagnostic(no_conflicting_lifecycle_method_diagnostic(span));
+            }
+            for span in on_changes_method_spans {
+                ctx.diagnostic(no_conflicting_lifecycle_method_diagnostic(span));
+            }
         }
     }
 }
@@ -155,13 +200,6 @@ fn test() {
         })
         class TestComponent implements OnInit {
             ngOnInit() {}
-        }
-        ",
-        // Non-Angular class with both
-        r"
-        class TestClass implements DoCheck, OnChanges {
-            ngDoCheck() {}
-            ngOnChanges() {}
         }
         ",
     ];
