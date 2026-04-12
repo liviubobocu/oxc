@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, is_lifecycle_method},
+    utils::{get_class_angular_decorator, is_lifecycle_method}
 };
 
 fn no_empty_lifecycle_method_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {

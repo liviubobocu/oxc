@@ -1,16 +1,16 @@
 use oxc_ast::{AstKind, ast::Expression};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
 use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        get_metadata_property, is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name,
+        get_metadata_property
+}
 };
 
 fn prefer_on_push_diagnostic(span: Span) -> OxcDiagnostic {
@@ -87,16 +87,7 @@ impl Rule for PreferOnPushComponentChangeDetection {
         if decorator_name != "Component" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -105,12 +96,17 @@ impl Rule for PreferOnPushComponentChangeDetection {
         // Check if changeDetection is set to OnPush
         match get_metadata_property(metadata, "changeDetection") {
             None => {
-                // No changeDetection property - using default
+                // No changeDetection property - using default (report on decorator)
                 ctx.diagnostic(prefer_on_push_diagnostic(decorator.span));
             }
             Some(expr) => {
                 if !is_on_push(expr) {
-                    ctx.diagnostic(prefer_on_push_diagnostic(decorator.span));
+                    // Report on the changeDetection value, matching ESLint
+                    let report_span = match expr {
+                        Expression::StaticMemberExpression(member) => member.property.span,
+                        _ => expr.span(),
+                    };
+                    ctx.diagnostic(prefer_on_push_diagnostic(report_span));
                 }
             }
         }
@@ -130,8 +126,8 @@ fn is_on_push(expr: &Expression<'_>) -> bool {
         }
         // Numeric literal 0 (ChangeDetectionStrategy.OnPush = 0)
         Expression::NumericLiteral(lit) => lit.value == 0.0,
-        _ => false,
-    }
+        _ => false
+}
 }
 
 #[test]

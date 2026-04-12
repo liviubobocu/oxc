@@ -1,7 +1,7 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -10,8 +10,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        get_metadata_string_value, is_angular_core_import,
+        get_component_metadata, get_decorator_name,
+        get_metadata_property,
     },
 };
 
@@ -29,12 +29,12 @@ fn pipe_prefix_diagnostic(span: Span, prefixes: &[String]) -> OxcDiagnostic {
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct PipePrefixConfig {
     #[serde(default)]
-    prefixes: Vec<String>,
+    prefixes: Vec<String>
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct PipePrefix {
-    prefixes: Vec<String>,
+    prefixes: Vec<String>
 }
 
 impl From<PipePrefixConfig> for PipePrefix {
@@ -130,25 +130,32 @@ impl Rule for PipePrefix {
         if decorator_name != "Pipe" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
         };
 
-        // Get the pipe name
-        let Some(pipe_name) = get_metadata_string_value(metadata, "name") else {
+        // Get the name property value expression (for accurate span reporting)
+        let Some(name_expr) = get_metadata_property(metadata, "name") else {
             return;
         };
+
+        // Extract the string value from the name expression
+        let pipe_name = match name_expr {
+            oxc_ast::ast::Expression::StringLiteral(lit) => lit.value.as_str(),
+            oxc_ast::ast::Expression::TemplateLiteral(lit) => {
+                if lit.expressions.is_empty() && lit.quasis.len() == 1 {
+                    lit.quasis[0].value.raw.as_str()
+                } else {
+                    return;
+                }
+            }
+            _ => return,
+        };
+
+        // Get the span for error reporting (use name value span, matching ESLint)
+        let name_span = name_expr.span();
 
         // Check if the pipe name starts with any of the configured prefixes
         let has_valid_prefix = self.prefixes.iter().any(|prefix| {
@@ -162,7 +169,7 @@ impl Rule for PipePrefix {
         });
 
         if !has_valid_prefix {
-            ctx.diagnostic(pipe_prefix_diagnostic(decorator.span, &self.prefixes));
+            ctx.diagnostic(pipe_prefix_diagnostic(name_span, &self.prefixes));
         }
     }
 }

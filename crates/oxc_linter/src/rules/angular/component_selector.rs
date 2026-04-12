@@ -1,7 +1,7 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -11,9 +11,9 @@ use crate::{
     rule::Rule,
     utils::{
         SelectorStyle, SelectorType, check_selector_prefix, check_selector_style,
-        extract_selector_name, get_component_metadata, get_decorator_identifier,
-        get_decorator_name, get_metadata_string_value, is_angular_core_import, parse_selector_type,
-    },
+        extract_selector_name, get_component_metadata,
+        get_decorator_name, get_metadata_property, parse_selector_type
+}
 };
 
 fn component_selector_type_diagnostic(span: Span, expected: &str) -> OxcDiagnostic {
@@ -45,7 +45,7 @@ pub struct ComponentSelectorConfig {
     #[serde(default)]
     prefix: PrefixConfig,
     #[serde(default = "default_style")]
-    style: String,
+    style: String
 }
 
 #[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
@@ -54,7 +54,7 @@ pub enum PrefixConfig {
     Single(String),
     Multiple(Vec<String>),
     #[default]
-    None,
+    None
 }
 
 impl PrefixConfig {
@@ -62,8 +62,8 @@ impl PrefixConfig {
         match self {
             PrefixConfig::Single(s) => vec![s.clone()],
             PrefixConfig::Multiple(v) => v.clone(),
-            PrefixConfig::None => vec![],
-        }
+            PrefixConfig::None => vec![]
+}
     }
 }
 
@@ -76,8 +76,8 @@ impl Default for ComponentSelectorConfig {
         Self {
             r#type: Some("element".to_string()),
             prefix: PrefixConfig::None,
-            style: default_style(),
-        }
+            style: default_style()
+}
     }
 }
 
@@ -85,7 +85,7 @@ impl Default for ComponentSelectorConfig {
 pub struct ComponentSelector {
     selector_type: Option<SelectorType>,
     prefixes: Vec<String>,
-    style: SelectorStyle,
+    style: SelectorStyle
 }
 
 impl Default for ComponentSelector {
@@ -93,8 +93,8 @@ impl Default for ComponentSelector {
         Self {
             selector_type: Some(SelectorType::Element),
             prefixes: vec![],
-            style: SelectorStyle::KebabCase,
-        }
+            style: SelectorStyle::KebabCase
+}
     }
 }
 
@@ -103,12 +103,12 @@ impl From<ComponentSelectorConfig> for ComponentSelector {
         let selector_type = config.r#type.as_deref().and_then(|t| match t {
             "element" => Some(SelectorType::Element),
             "attribute" => Some(SelectorType::Attribute),
-            _ => None,
-        });
+            _ => None
+});
         let style = match config.style.as_str() {
             "camelCase" => SelectorStyle::CamelCase,
-            _ => SelectorStyle::KebabCase,
-        };
+            _ => SelectorStyle::KebabCase
+};
         Self { selector_type, prefixes: config.prefix.as_vec(), style }
     }
 }
@@ -185,30 +185,37 @@ impl Rule for ComponentSelector {
         if decorator_name != "Component" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
         };
 
-        // Get the selector value
-        let Some(selector) = get_metadata_string_value(metadata, "selector") else {
+        // Get the selector property value expression (for accurate span reporting)
+        let Some(selector_expr) = get_metadata_property(metadata, "selector") else {
             return;
         };
+
+        // Extract the string value from the selector expression
+        let selector = match selector_expr {
+            oxc_ast::ast::Expression::StringLiteral(lit) => lit.value.as_str(),
+            oxc_ast::ast::Expression::TemplateLiteral(lit) => {
+                if lit.expressions.is_empty() && lit.quasis.len() == 1 {
+                    lit.quasis[0].value.raw.as_str()
+                } else {
+                    return;
+                }
+            }
+            _ => return
+};
 
         // Extract the selector name
         let Some(selector_name) = extract_selector_name(selector) else {
             return;
         };
+
+        // Get the span for error reporting (use selector value span, matching ESLint)
+        let selector_span = selector_expr.span();
 
         // Check type
         if let Some(expected_type) = &self.selector_type
@@ -216,9 +223,9 @@ impl Rule for ComponentSelector {
                 && actual_type != *expected_type {
                     let type_str = match expected_type {
                         SelectorType::Element => "an element",
-                        SelectorType::Attribute => "an attribute",
-                    };
-                    ctx.diagnostic(component_selector_type_diagnostic(decorator.span, type_str));
+                        SelectorType::Attribute => "an attribute"
+};
+                    ctx.diagnostic(component_selector_type_diagnostic(selector_span, type_str));
                     return;
                 }
 
@@ -227,7 +234,7 @@ impl Rule for ComponentSelector {
             let prefix_refs: Vec<&str> = self.prefixes.iter().map(std::string::String::as_str).collect();
             if !check_selector_prefix(selector_name, &prefix_refs) {
                 ctx.diagnostic(component_selector_prefix_diagnostic(
-                    decorator.span,
+                    selector_span,
                     &self.prefixes,
                 ));
                 return;
@@ -238,9 +245,9 @@ impl Rule for ComponentSelector {
         if !check_selector_style(selector_name, self.style) {
             let style_str = match self.style {
                 SelectorStyle::KebabCase => "kebab-case",
-                SelectorStyle::CamelCase => "camelCase",
-            };
-            ctx.diagnostic(component_selector_style_diagnostic(decorator.span, style_str));
+                SelectorStyle::CamelCase => "camelCase"
+};
+            ctx.diagnostic(component_selector_style_diagnostic(selector_span, style_str));
         }
     }
 }

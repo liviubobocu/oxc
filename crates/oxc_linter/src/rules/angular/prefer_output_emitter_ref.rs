@@ -7,10 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{
-        AngularDecoratorType, get_class_angular_decorator, get_decorator_identifier,
-        get_decorator_name, is_angular_core_import,
-    },
+    utils::get_decorator_name,
 };
 
 fn prefer_output_emitter_ref_diagnostic(span: Span) -> OxcDiagnostic {
@@ -90,47 +87,10 @@ impl Rule for PreferOutputEmitterRef {
         if decorator_name != "Output" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
-        // Find the parent class
-        let Some(class) = get_parent_class(node, ctx) else {
-            return;
-        };
-
-        // Check if the class has a @Component or @Directive decorator
-        let Some((decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
-            return;
-        };
-
-        if !matches!(
-            decorator_type,
-            AngularDecoratorType::Component | AngularDecoratorType::Directive
-        ) {
-            return;
-        }
+        // Note: Match ESLint behavior - does not verify imports or class context for exact parity
 
         ctx.diagnostic(prefer_output_emitter_ref_diagnostic(decorator.span));
     }
-}
-
-fn get_parent_class<'a, 'b>(
-    node: &'b AstNode<'a>,
-    ctx: &'b LintContext<'a>,
-) -> Option<&'b oxc_ast::ast::Class<'a>> {
-    for ancestor in ctx.nodes().ancestors(node.id()) {
-        if let AstKind::Class(class) = ancestor.kind() {
-            return Some(class);
-        }
-    }
-    None
 }
 
 #[test]
@@ -168,21 +128,6 @@ fn test() {
             template: ''
         })
         class TestComponent {}
-        ",
-        // Non-Angular class with @Output
-        r"
-        import { Output, EventEmitter } from 'other-library';
-        class TestClass {
-            @Output() myEvent = new EventEmitter();
-        }
-        ",
-        // @Output in non-component/directive class
-        r"
-        import { Injectable, Output, EventEmitter } from '@angular/core';
-        @Injectable({ providedIn: 'root' })
-        class TestService {
-            @Output() myEvent = new EventEmitter();
-        }
         ",
     ];
 
@@ -240,6 +185,21 @@ fn test() {
         })
         class TestComponent {
             @Output() itemSelected = new EventEmitter<{ id: number; name: string }>();
+        }
+        ",
+        // Non-Angular class with @Output (now also flagged to match ESLint)
+        r"
+        import { Output, EventEmitter } from 'other-library';
+        class TestClass {
+            @Output() myEvent = new EventEmitter();
+        }
+        ",
+        // @Output in non-component/directive class (now also flagged to match ESLint)
+        r"
+        import { Injectable, Output, EventEmitter } from '@angular/core';
+        @Injectable({ providedIn: 'root' })
+        class TestService {
+            @Output() myEvent = new EventEmitter();
         }
         ",
     ];

@@ -8,9 +8,9 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        get_metadata_property, is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name,
+        get_metadata_property
+}
 };
 
 fn no_queries_metadata_property_diagnostic(span: Span) -> OxcDiagnostic {
@@ -94,16 +94,7 @@ impl Rule for NoQueriesMetadataProperty {
         if !matches!(decorator_name, "Component" | "Directive") {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;

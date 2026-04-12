@@ -1,15 +1,15 @@
 use oxc_ast::{AstKind, ast::Expression};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
 use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
     utils::{
-        get_decorator_call, get_decorator_identifier, get_decorator_name, is_angular_core_import,
-    },
+        get_decorator_call, get_decorator_name
+}
 };
 
 fn no_output_rename_diagnostic(span: Span) -> OxcDiagnostic {
@@ -96,30 +96,30 @@ impl NoOutputRename {
         if decorator_name != "Output" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the decorator call to check for alias
         let Some(call) = get_decorator_call(decorator) else {
             return;
         };
 
-        // Get the first argument (the alias)
+        // Get the first argument (the alias) and its span for error reporting
         let Some(first_arg) = call.arguments.first() else {
             return;
         };
 
-        let alias = match first_arg {
-            oxc_ast::ast::Argument::StringLiteral(lit) => Some(lit.value.as_str()),
-            oxc_ast::ast::Argument::ObjectExpression(obj) => get_alias_from_object(obj),
-            _ => None,
+        let (alias, alias_span) = match first_arg {
+            oxc_ast::ast::Argument::StringLiteral(lit) => {
+                (Some(lit.value.as_str()), lit.span)
+            }
+            oxc_ast::ast::Argument::ObjectExpression(obj) => {
+                // Check for { alias: 'name' } format
+                if let Some((alias_str, span)) = get_alias_from_object_with_span(obj) {
+                    (Some(alias_str), span)
+                } else {
+                    (None, obj.span)
+                }
+            }
+            _ => (None, first_arg.span())
         };
 
         let Some(alias) = alias else {
@@ -134,7 +134,7 @@ impl NoOutputRename {
             return;
         }
 
-        ctx.diagnostic(no_output_rename_diagnostic(decorator.span));
+        ctx.diagnostic(no_output_rename_diagnostic(alias_span));
     }
 
     fn check_output_signal(
@@ -157,16 +157,12 @@ impl NoOutputRename {
         if callee.name.as_str() != "output" {
             return;
         }
-
-        // Verify it's from @angular/core
-        if !is_angular_core_import(callee.as_ref(), ctx) {
-            return;
-        }
+        // Note: Match ESLint behavior - does not verify imports for exact parity
 
         // Check for alias in options object
         for arg in &call.arguments {
             if let oxc_ast::ast::Argument::ObjectExpression(obj) = arg
-                && let Some(alias) = get_alias_from_object(obj) {
+                && let Some((alias, alias_span)) = get_alias_from_object_with_span(obj) {
                     let property_name = prop.key.static_name();
 
                     // Allow if alias matches property name
@@ -174,7 +170,7 @@ impl NoOutputRename {
                         continue;
                     }
 
-                    ctx.diagnostic(no_output_rename_diagnostic(prop.span));
+                    ctx.diagnostic(no_output_rename_diagnostic(alias_span));
                     return;
                 }
         }
@@ -194,7 +190,9 @@ impl NoOutputRename {
     }
 }
 
-fn get_alias_from_object<'a>(obj: &'a oxc_ast::ast::ObjectExpression<'a>) -> Option<&'a str> {
+fn get_alias_from_object_with_span<'a>(
+    obj: &'a oxc_ast::ast::ObjectExpression<'a>,
+) -> Option<(&'a str, Span)> {
     use oxc_ast::ast::{ObjectPropertyKind, PropertyKey};
 
     for property in &obj.properties {
@@ -202,7 +200,7 @@ fn get_alias_from_object<'a>(obj: &'a oxc_ast::ast::ObjectExpression<'a>) -> Opt
             && let PropertyKey::StaticIdentifier(ident) = &prop.key
                 && ident.name.as_str() == "alias"
                     && let Expression::StringLiteral(lit) = &prop.value {
-                        return Some(lit.value.as_str());
+                        return Some((lit.value.as_str(), lit.span));
                     }
     }
     None

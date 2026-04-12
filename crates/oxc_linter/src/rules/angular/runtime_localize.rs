@@ -93,8 +93,8 @@ impl Rule for RuntimeLocalize {
         // Check if the tag is $localize
         let tag_name = match &tagged.tag {
             oxc_ast::ast::Expression::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+            _ => return
+};
 
         if tag_name != "$localize" {
             return;
@@ -123,14 +123,14 @@ fn is_at_module_load_time(node: &AstNode<'_>, ctx: &LintContext<'_>) -> bool {
                 // Regular method = runtime
                 return false;
             }
-            // Inside a property definition = module load time
+            // Inside a property definition
             AstKind::PropertyDefinition(prop) => {
-                // Static properties are especially problematic
+                // Static properties are module load time
                 if prop.r#static {
                     return true;
                 }
-                // Instance properties are also module load time
-                return true;
+                // Instance properties are runtime (evaluate when instance is created)
+                return false;
             }
             // Program level = module load time
             AstKind::Program(_) => {

@@ -9,9 +9,9 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        get_metadata_property, is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name,
+        get_metadata_property
+}
 };
 
 fn directive_class_suffix_diagnostic(span: Span, suffixes: &[String]) -> OxcDiagnostic {
@@ -27,7 +27,7 @@ fn directive_class_suffix_diagnostic(span: Span, suffixes: &[String]) -> OxcDiag
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct DirectiveClassSuffixConfig {
     #[serde(default = "default_suffixes")]
-    suffixes: Vec<String>,
+    suffixes: Vec<String>
 }
 
 fn default_suffixes() -> Vec<String> {
@@ -42,7 +42,7 @@ impl Default for DirectiveClassSuffixConfig {
 
 #[derive(Debug, Clone)]
 pub struct DirectiveClassSuffix {
-    suffixes: Vec<String>,
+    suffixes: Vec<String>
 }
 
 impl Default for DirectiveClassSuffix {
@@ -129,16 +129,7 @@ impl Rule for DirectiveClassSuffix {
         if decorator_name != "Directive" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;

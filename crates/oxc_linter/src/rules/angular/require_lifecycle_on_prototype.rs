@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, is_lifecycle_method},
+    utils::{get_class_angular_decorator, is_lifecycle_method}
 };
 
 fn require_lifecycle_on_prototype_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {
@@ -95,8 +95,8 @@ impl Rule for RequireLifecycleOnPrototype {
         // Get property name
         let prop_name = match &prop.key {
             oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+            _ => return
+};
 
         // Check if this is a lifecycle method name
         if !is_lifecycle_method(prop_name) {

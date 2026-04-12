@@ -8,9 +8,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_decorator_identifier, get_decorator_name, get_signal_replacement,
-        is_angular_core_import, is_legacy_angular_decorator,
-    },
+        get_decorator_name, get_signal_replacement, is_legacy_angular_decorator
+}
 };
 
 fn prefer_signals_diagnostic(span: Span, decorator_name: &str, replacement: &str) -> OxcDiagnostic {
@@ -93,14 +92,7 @@ impl Rule for PreferSignals {
         }
 
         // Get the identifier to check import source
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        // Verify it's imported from @angular/core
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
+        // Note: Match ESLint behavior - does not verify imports for exact parity
 
         // Get the signal-based replacement
         let Some(replacement) = get_signal_replacement(decorator_name) else {

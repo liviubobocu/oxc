@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_decorator_identifier, get_decorator_name, is_angular_core_import},
+    utils::{get_decorator_name}
 };
 
 fn no_attribute_decorator_diagnostic(span: Span) -> OxcDiagnostic {
@@ -91,14 +91,8 @@ impl Rule for NoAttributeDecorator {
             return;
         }
 
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
+        // Note: Match ESLint behavior - trigger on ANY decorator named "Attribute"
+        // ESLint does not verify imports, so we don't either for exact parity
 
         ctx.diagnostic(no_attribute_decorator_diagnostic(decorator.span));
     }

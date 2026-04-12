@@ -3,7 +3,7 @@ use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
 
-use crate::{AstNode, context::LintContext, rule::Rule, utils::is_angular_core_import};
+use crate::{AstNode, context::LintContext, rule::Rule};
 
 fn no_forward_ref_diagnostic(span: Span) -> OxcDiagnostic {
     OxcDiagnostic::warn("Avoid using `forwardRef`")
@@ -80,22 +80,15 @@ impl Rule for NoForwardRef {
         // Check if this is a call to forwardRef
         let callee_name = match &call_expr.callee {
             oxc_ast::ast::Expression::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+            _ => return
+};
 
         if callee_name != "forwardRef" {
             return;
         }
 
-        // Verify it's imported from @angular/core
-        let Some(ident) = call_expr.callee.get_identifier_reference() else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - trigger on ANY function named "forwardRef"
+        // ESLint does not verify imports, so we don't either for exact parity
         ctx.diagnostic(no_forward_ref_diagnostic(call_expr.span));
     }
 }

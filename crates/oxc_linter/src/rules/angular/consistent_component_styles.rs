@@ -1,7 +1,7 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use serde::Deserialize;
 
 use crate::{
@@ -9,9 +9,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name
+}
 };
 
 fn consistent_component_styles_diagnostic(span: Span, message_id: &str) -> OxcDiagnostic {
@@ -32,8 +31,8 @@ fn consistent_component_styles_diagnostic(span: Span, message_id: &str) -> OxcDi
             "Use `styleUrls` instead of `styleUrl`",
             "Use `styleUrls: ['./style.css']` instead of `styleUrl: './style.css'`",
         ),
-        _ => ("Use consistent style format", "Use consistent style format"),
-    };
+        _ => ("Use consistent style format", "Use consistent style format")
+};
     OxcDiagnostic::warn(message).with_help(help).with_label(span)
 }
 
@@ -42,19 +41,19 @@ fn consistent_component_styles_diagnostic(span: Span, message_id: &str) -> OxcDi
 pub enum StyleFormat {
     #[default]
     String,
-    Array,
+    Array
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct ConsistentComponentStylesConfig {
     #[serde(default)]
-    format: StyleFormat,
+    format: StyleFormat
 }
 
 #[derive(Debug, Clone)]
 pub struct ConsistentComponentStyles {
-    format: StyleFormat,
+    format: StyleFormat
 }
 
 impl Default for ConsistentComponentStyles {
@@ -131,8 +130,8 @@ impl Rule for ConsistentComponentStyles {
         if let Some(format_str) = config_value.as_str() {
             let format = match format_str {
                 "array" => StyleFormat::Array,
-                _ => StyleFormat::String,
-            };
+                _ => StyleFormat::String
+};
             return Ok(Self { format });
         }
 
@@ -153,16 +152,7 @@ impl Rule for ConsistentComponentStyles {
         if decorator_name != "Component" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -174,8 +164,8 @@ impl Rule for ConsistentComponentStyles {
                 let prop_name = match &obj_prop.key {
                     oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
                     oxc_ast::ast::PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
-                    _ => None,
-                };
+                    _ => None
+};
 
                 match prop_name {
                     Some("styles") => {
@@ -190,8 +180,9 @@ impl Rule for ConsistentComponentStyles {
                                 {
                                     // Only report if it's a single-element array (could be converted to string)
                                     if array.elements.len() == 1 {
+                                        // Report on the array value (matching ESLint)
                                         ctx.diagnostic(consistent_component_styles_diagnostic(
-                                            obj_prop.span,
+                                            obj_prop.value.span(),
                                             "useStylesString",
                                         ));
                                     }
@@ -199,8 +190,9 @@ impl Rule for ConsistentComponentStyles {
                             }
                             (StyleFormat::Array, false) => {
                                 // Using string but expecting array
+                                // Report on the string value (matching ESLint)
                                 ctx.diagnostic(consistent_component_styles_diagnostic(
-                                    obj_prop.span,
+                                    obj_prop.value.span(),
                                     "useStylesArray",
                                 ));
                             }

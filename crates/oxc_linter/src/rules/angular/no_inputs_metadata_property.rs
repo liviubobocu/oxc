@@ -7,10 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{
-        find_property_key_span, get_component_metadata, get_decorator_identifier,
-        get_decorator_name, is_angular_core_import,
-    },
+    utils::{get_component_metadata, get_decorator_name}
 };
 
 fn no_inputs_metadata_property_diagnostic(span: Span) -> OxcDiagnostic {
@@ -92,16 +89,7 @@ impl Rule for NoInputsMetadataProperty {
         if decorator_name != "Component" && decorator_name != "Directive" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -111,15 +99,30 @@ impl Rule for NoInputsMetadataProperty {
         for prop in &metadata.properties {
             if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(obj_prop) = prop {
                 let prop_name = match &obj_prop.key {
-                    oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
-                    oxc_ast::ast::PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
+                    // Static identifier: inputs
+                    oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => {
+                        Some(ident.name.as_str())
+                    }
+                    // String literal (non-computed): 'inputs'
+                    oxc_ast::ast::PropertyKey::StringLiteral(lit) => {
+                        Some(lit.value.as_str())
+                    }
+                    // Computed template literal: [`inputs`]
+                    oxc_ast::ast::PropertyKey::TemplateLiteral(template) => {
+                        // Only match if it's a static template (no expressions)
+                        if template.expressions.is_empty() && template.quasis.len() == 1 {
+                            template.quasis.first().map(|q| q.value.raw.as_str())
+                        } else {
+                            None
+                        }
+                    }
                     _ => None,
                 };
 
                 if prop_name == Some("inputs") {
                     // This is a top-level inputs property, not inside hostDirectives
-                    let span = find_property_key_span(metadata, "inputs").unwrap_or(metadata.span);
-                    ctx.diagnostic(no_inputs_metadata_property_diagnostic(span));
+                    // Use the full property span (key + value)
+                    ctx.diagnostic(no_inputs_metadata_property_diagnostic(obj_prop.span));
                     return;
                 }
             }
@@ -197,6 +200,17 @@ fn test() {
         })
         class TestComponent {}
         ",
+        // Dynamic computed property (not 'inputs')
+        r"
+        import { Component } from '@angular/core';
+        const inputs = 'providers';
+        @Component({
+            selector: 'app-test',
+            template: '',
+            [inputs]: []
+        })
+        class TestComponent {}
+        ",
     ];
 
     let fail = vec![
@@ -248,6 +262,36 @@ fn test() {
             selector: 'app-test',
             template: '',
             inputs: []
+        })
+        class TestComponent {}
+        ",
+        // String literal key
+        r"
+        import { Component } from '@angular/core';
+        @Component({
+            selector: 'app-test',
+            template: '',
+            'inputs': ['name']
+        })
+        class TestComponent {}
+        ",
+        // Computed string literal key
+        r"
+        import { Component } from '@angular/core';
+        @Component({
+            selector: 'app-test',
+            template: '',
+            ['inputs']: ['name']
+        })
+        class TestComponent {}
+        ",
+        // Computed template literal key
+        r"
+        import { Component } from '@angular/core';
+        @Component({
+            selector: 'app-test',
+            template: '',
+            [`inputs`]: ['name']
         })
         class TestComponent {}
         ",

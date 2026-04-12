@@ -8,9 +8,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        AngularDecoratorType, get_class_angular_decorator, get_decorator_identifier,
-        get_decorator_name, is_angular_core_import,
-    },
+        AngularDecoratorType, get_class_angular_decorator, get_decorator_name
+}
 };
 
 fn contextual_decorator_diagnostic(
@@ -114,16 +113,7 @@ impl Rule for ContextualDecorator {
         if !COMPONENT_DIRECTIVE_ONLY_DECORATORS.contains(&decorator_name) {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Find the parent class
         let Some(class) = get_parent_class(node, ctx) else {
             return;
@@ -150,8 +140,8 @@ impl Rule for ContextualDecorator {
                 AngularDecoratorType::Injectable => "Injectable",
                 AngularDecoratorType::NgModule => "NgModule",
                 AngularDecoratorType::Pipe => "Pipe",
-                _ => return,
-            };
+                _ => return
+};
 
             ctx.diagnostic(contextual_decorator_diagnostic(
                 decorator.span,

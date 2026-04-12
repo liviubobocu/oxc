@@ -9,9 +9,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name
+}
 };
 
 fn no_duplicates_in_metadata_arrays_diagnostic(
@@ -95,14 +94,8 @@ impl Rule for NoDuplicatesInMetadataArrays {
             return;
         }
 
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
+        // Note: Match ESLint behavior - trigger on ANY decorator named NgModule/Component/Directive
+        // ESLint does not verify imports, so we don't either for exact parity
 
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
@@ -133,8 +126,8 @@ fn get_property_key_name<'a>(key: &'a oxc_ast::ast::PropertyKey<'a>) -> Option<&
     match key {
         oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
         oxc_ast::ast::PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
-        _ => None,
-    }
+        _ => None
+}
 }
 
 fn check_array_for_duplicates(
@@ -186,16 +179,16 @@ fn get_expression_name(expr: &oxc_ast::ast::Expression<'_>) -> Option<String> {
                         }
             None
         }
-        _ => None,
-    }
+        _ => None
+}
 }
 
 fn get_expression_span(expr: &oxc_ast::ast::Expression<'_>) -> Span {
     match expr {
         oxc_ast::ast::Expression::Identifier(ident) => ident.span,
         oxc_ast::ast::Expression::CallExpression(call) => call.span,
-        _ => expr.span(),
-    }
+        _ => expr.span()
+}
 }
 
 #[test]

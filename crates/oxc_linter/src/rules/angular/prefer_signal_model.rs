@@ -9,7 +9,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{AngularDecoratorType, get_class_angular_decorator},
+    utils::{AngularDecoratorType, get_class_angular_decorator}
 };
 
 fn prefer_signal_model_diagnostic(span: Span, input_name: &str) -> OxcDiagnostic {
@@ -116,24 +116,18 @@ impl Rule for PreferSignalModel {
                 // Get the callee name
                 let callee_name = match &call.callee {
                     oxc_ast::ast::Expression::Identifier(ident) => ident.name.as_str(),
-                    _ => continue,
-                };
+                    _ => continue
+};
 
                 // Check if it's input() or output()
+                // Note: Match ESLint behavior - trigger on ANY function named "input"/"output"
+                // ESLint does not verify imports, so we don't either for exact parity
                 match callee_name {
                     "input" => {
-                        // Verify it's from @angular/core
-                        if let Some(ident) = call.callee.get_identifier_reference()
-                            && is_angular_core_import_manual(ident, ctx) {
-                                inputs.insert(prop_name.to_string(), prop.span);
-                            }
+                        inputs.insert(prop_name.to_string(), prop.span);
                     }
                     "output" => {
-                        // Verify it's from @angular/core
-                        if let Some(ident) = call.callee.get_identifier_reference()
-                            && is_angular_core_import_manual(ident, ctx) {
-                                outputs.insert(prop_name.to_string(), prop.span);
-                            }
+                        outputs.insert(prop_name.to_string(), prop.span);
                     }
                     _ => {}
                 }
@@ -153,8 +147,8 @@ impl Rule for PreferSignalModel {
 fn get_property_name<'a>(key: &'a oxc_ast::ast::PropertyKey<'a>) -> Option<&'a str> {
     match key {
         oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
-        _ => None,
-    }
+        _ => None
+}
 }
 
 fn is_angular_core_import_manual(

@@ -9,8 +9,8 @@ use crate::{
     rule::Rule,
     utils::{
         class_implements_interface, get_class_angular_decorator,
-        get_lifecycle_interface_for_method, is_lifecycle_method,
-    },
+        get_lifecycle_interface_for_method, is_lifecycle_method
+}
 };
 
 fn use_lifecycle_interface_diagnostic(

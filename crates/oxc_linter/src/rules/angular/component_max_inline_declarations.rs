@@ -1,7 +1,7 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use serde::Deserialize;
 
 use crate::{
@@ -9,9 +9,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name
+}
 };
 
 fn component_max_inline_declarations_diagnostic(
@@ -41,7 +40,7 @@ pub struct ComponentMaxInlineDeclarationsConfig {
     styles: usize,
     /// Maximum lines for inline animations (default: 15)
     #[serde(default = "default_animations")]
-    animations: usize,
+    animations: usize
 }
 
 fn default_template() -> usize {
@@ -61,8 +60,8 @@ impl Default for ComponentMaxInlineDeclarationsConfig {
         Self {
             template: default_template(),
             styles: default_styles(),
-            animations: default_animations(),
-        }
+            animations: default_animations()
+}
     }
 }
 
@@ -71,7 +70,7 @@ impl Default for ComponentMaxInlineDeclarationsConfig {
 pub struct ComponentMaxInlineDeclarations {
     template_max: usize,
     styles_max: usize,
-    animations_max: usize,
+    animations_max: usize
 }
 
 impl Default for ComponentMaxInlineDeclarations {
@@ -79,8 +78,8 @@ impl Default for ComponentMaxInlineDeclarations {
         Self {
             template_max: default_template(),
             styles_max: default_styles(),
-            animations_max: default_animations(),
-        }
+            animations_max: default_animations()
+}
     }
 }
 
@@ -150,8 +149,8 @@ impl Rule for ComponentMaxInlineDeclarations {
         Ok(Self {
             template_max: config.template,
             styles_max: config.styles,
-            animations_max: config.animations,
-        })
+            animations_max: config.animations
+})
     }
 
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
@@ -167,16 +166,7 @@ impl Rule for ComponentMaxInlineDeclarations {
         if decorator_name != "Component" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -226,12 +216,13 @@ fn get_property_line_count(
             let prop_name = match &obj_prop.key {
                 oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
                 oxc_ast::ast::PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
-                _ => None,
-            };
+                _ => None
+};
 
             if prop_name == Some(property_name) {
                 let line_count = count_lines_in_expression(&obj_prop.value);
-                return Some((obj_prop.span, line_count));
+                // Report on the value span, matching ESLint behavior
+                return Some((obj_prop.value.span(), line_count));
             }
         }
     }
@@ -244,8 +235,8 @@ fn get_styles_line_count(metadata: &oxc_ast::ast::ObjectExpression<'_>) -> Optio
             let prop_name = match &obj_prop.key {
                 oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
                 oxc_ast::ast::PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
-                _ => None,
-            };
+                _ => None
+};
 
             if prop_name == Some("styles") {
                 // styles can be an array or a single string
@@ -256,9 +247,10 @@ fn get_styles_line_count(metadata: &oxc_ast::ast::ObjectExpression<'_>) -> Optio
                         .iter()
                         .filter_map(|el| el.as_expression().map(count_lines_in_expression))
                         .sum(),
-                    expr => count_lines_in_expression(expr),
-                };
-                return Some((obj_prop.span, line_count));
+                    expr => count_lines_in_expression(expr)
+};
+                // Report on the value span, matching ESLint behavior
+                return Some((obj_prop.value.span(), line_count));
             }
         }
     }
@@ -280,8 +272,8 @@ fn count_lines_in_expression(expr: &oxc_ast::ast::Expression<'_>) -> usize {
                 .filter_map(|el| el.as_expression().map(count_lines_in_expression))
                 .sum()
         }
-        _ => 0,
-    }
+        _ => 0
+}
 }
 
 fn count_lines(s: &str) -> usize {

@@ -8,9 +8,9 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        get_metadata_property, is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name,
+        get_metadata_property
+}
 };
 
 fn no_pipe_impure_diagnostic(span: Span) -> OxcDiagnostic {
@@ -93,16 +93,7 @@ impl Rule for NoPipeImpure {
         if decorator_name != "Pipe" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -128,8 +119,8 @@ impl Rule for NoPipeImpure {
                     false
                 }
             }
-            _ => false,
-        };
+            _ => false
+};
 
         if is_impure {
             let span = find_property_span(metadata, "pure").unwrap_or(decorator.span);
@@ -143,11 +134,36 @@ fn find_property_span(obj: &oxc_ast::ast::ObjectExpression<'_>, key: &str) -> Op
     use oxc_span::GetSpan;
 
     for property in &obj.properties {
-        if let ObjectPropertyKind::ObjectProperty(prop) = property
-            && let PropertyKey::StaticIdentifier(ident) = &prop.key
-                && ident.name.as_str() == key {
-                    return Some(prop.span());
+        if let ObjectPropertyKind::ObjectProperty(prop) = property {
+            let key_matches = match &prop.key {
+                // Standard identifier key: `pure: false`
+                PropertyKey::StaticIdentifier(ident) => ident.name.as_str() == key,
+                // String literal key: `'pure': false`
+                PropertyKey::StringLiteral(lit) => lit.value.as_str() == key,
+                _ => {
+                    // For computed keys, check the expression
+                    if prop.computed {
+                        match prop.key.as_expression() {
+                            // Computed string literal: `['pure']: false`
+                            Some(Expression::StringLiteral(lit)) => lit.value.as_str() == key,
+                            // Computed template literal with no expressions: `` [`pure`]: false ``
+                            Some(Expression::TemplateLiteral(tpl))
+                                if tpl.expressions.is_empty() =>
+                            {
+                                tpl.quasis.first().is_some_and(|q| q.value.raw.as_str() == key)
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
                 }
+            };
+
+            if key_matches {
+                return Some(prop.span());
+            }
+        }
     }
     None
 }

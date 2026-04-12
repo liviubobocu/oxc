@@ -9,8 +9,8 @@ use crate::{
     rule::Rule,
     utils::{
         AngularDecoratorType, get_class_angular_decorator, is_lifecycle_method,
-        is_lifecycle_valid_for_decorator,
-    },
+        is_lifecycle_valid_for_decorator
+}
 };
 
 fn contextual_lifecycle_diagnostic(
@@ -125,8 +125,8 @@ impl Rule for ContextualLifecycle {
                 AngularDecoratorType::Directive => "Directive",
                 AngularDecoratorType::Injectable => "Injectable",
                 AngularDecoratorType::Pipe => "Pipe",
-                AngularDecoratorType::NgModule => "NgModule",
-            };
+                AngularDecoratorType::NgModule => "NgModule"
+};
             ctx.diagnostic(contextual_lifecycle_diagnostic(
                 method.span,
                 &method_name,

@@ -8,9 +8,9 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        get_metadata_property, is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name,
+        get_metadata_property
+}
 };
 
 fn use_component_view_encapsulation_diagnostic(span: Span) -> OxcDiagnostic {
@@ -95,16 +95,7 @@ impl Rule for UseComponentViewEncapsulation {
         if decorator_name != "Component" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -139,8 +130,8 @@ fn is_view_encapsulation_none(expr: &Expression<'_>) -> bool {
                 lit.value == 2.0
             }
         }
-        _ => false,
-    }
+        _ => false
+}
 }
 
 fn find_property_span(obj: &oxc_ast::ast::ObjectExpression<'_>, key: &str) -> Option<Span> {
@@ -151,7 +142,8 @@ fn find_property_span(obj: &oxc_ast::ast::ObjectExpression<'_>, key: &str) -> Op
         if let ObjectPropertyKind::ObjectProperty(prop) = property
             && let PropertyKey::StaticIdentifier(ident) = &prop.key
                 && ident.name.as_str() == key {
-                    return Some(prop.span());
+                    // Return the value span (matching ESLint behavior)
+                    return Some(prop.value.span());
                 }
     }
     None

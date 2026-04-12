@@ -3,7 +3,7 @@ use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
 
-use crate::{AstNode, context::LintContext, rule::Rule, utils::is_angular_core_import};
+use crate::{AstNode, context::LintContext, rule::Rule};
 
 fn computed_must_return_diagnostic(span: Span) -> OxcDiagnostic {
     OxcDiagnostic::warn("Computed signal callback must return a value")
@@ -76,21 +76,15 @@ impl Rule for ComputedMustReturn {
         // Check if this is a call to computed
         let callee_name = match &call_expr.callee {
             oxc_ast::ast::Expression::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+            _ => return
+};
 
         if callee_name != "computed" {
             return;
         }
 
-        // Verify it's imported from @angular/core
-        let Some(ident) = call_expr.callee.get_identifier_reference() else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
+        // Note: Match ESLint behavior - trigger on ANY function named "computed"
+        // ESLint does not verify imports, so we don't either for exact parity
 
         // Get the first argument (the callback function)
         let Some(first_arg) = call_expr.arguments.first() else {
@@ -166,8 +160,8 @@ fn has_return_in_statement(stmt: &oxc_ast::ast::Statement<'_>) -> bool {
                 .is_some_and(|f| f.body.iter().any(has_return_in_statement));
             block_returns || handler_returns || finalizer_returns
         }
-        _ => false,
-    }
+        _ => false
+}
 }
 
 #[test]

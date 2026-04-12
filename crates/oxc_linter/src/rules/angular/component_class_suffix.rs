@@ -8,7 +8,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_decorator_identifier, get_decorator_name, is_angular_core_import},
+    utils::{get_decorator_name}
 };
 
 fn component_class_suffix_diagnostic(span: Span, suffixes: &[String]) -> OxcDiagnostic {
@@ -27,7 +27,7 @@ fn component_class_suffix_diagnostic(span: Span, suffixes: &[String]) -> OxcDiag
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct ComponentClassSuffixConfig {
     #[serde(default = "default_suffixes")]
-    suffixes: Vec<String>,
+    suffixes: Vec<String>
 }
 
 fn default_suffixes() -> Vec<String> {
@@ -42,7 +42,7 @@ impl Default for ComponentClassSuffixConfig {
 
 #[derive(Debug, Clone)]
 pub struct ComponentClassSuffix {
-    suffixes: Vec<String>,
+    suffixes: Vec<String>
 }
 
 impl Default for ComponentClassSuffix {
@@ -132,16 +132,7 @@ impl Rule for ComponentClassSuffix {
         if decorator_name != "Component" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Find the parent class
         let Some(class) = get_parent_class_from_decorator(node, ctx) else {
             return;

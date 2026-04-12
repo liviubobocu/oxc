@@ -9,9 +9,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_identifier, get_decorator_name,
-        is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name
+}
 };
 
 fn sort_keys_diagnostic(span: Span, decorator: &str, expected_order: &str) -> OxcDiagnostic {
@@ -35,7 +34,7 @@ pub struct SortKeysInTypeDecoratorConfig {
     #[serde(default = "default_ng_module_order")]
     ng_module: Vec<String>,
     #[serde(default = "default_pipe_order")]
-    pipe: Vec<String>,
+    pipe: Vec<String>
 }
 
 fn default_component_order() -> Vec<String> {
@@ -105,7 +104,7 @@ pub struct SortKeysInTypeDecorator {
     component_order: Vec<String>,
     directive_order: Vec<String>,
     ng_module_order: Vec<String>,
-    pipe_order: Vec<String>,
+    pipe_order: Vec<String>
 }
 
 impl From<SortKeysInTypeDecoratorConfig> for SortKeysInTypeDecorator {
@@ -126,8 +125,8 @@ impl From<SortKeysInTypeDecoratorConfig> for SortKeysInTypeDecorator {
             } else {
                 config.ng_module
             },
-            pipe_order: if config.pipe.is_empty() { default_pipe_order() } else { config.pipe },
-        }
+            pipe_order: if config.pipe.is_empty() { default_pipe_order() } else { config.pipe }
+}
     }
 }
 
@@ -206,22 +205,13 @@ impl Rule for SortKeysInTypeDecorator {
             "Directive" => &self.directive_order,
             "NgModule" => &self.ng_module_order,
             "Pipe" => &self.pipe_order,
-            _ => return,
-        };
+            _ => return
+};
 
         if expected_order.is_empty() {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;

@@ -8,9 +8,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        find_property_key_span, get_component_metadata, get_decorator_identifier,
-        get_decorator_name, is_angular_core_import,
-    },
+        get_component_metadata, get_decorator_name
+}
 };
 
 fn no_outputs_metadata_property_diagnostic(span: Span) -> OxcDiagnostic {
@@ -92,16 +91,7 @@ impl Rule for NoOutputsMetadataProperty {
         if decorator_name != "Component" && decorator_name != "Directive" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -111,15 +101,34 @@ impl Rule for NoOutputsMetadataProperty {
         for prop in &metadata.properties {
             if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(obj_prop) = prop {
                 let prop_name = match &obj_prop.key {
+                    // Standard identifier key: `outputs: value`
                     oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
+                    // String literal key: `'outputs': value`
                     oxc_ast::ast::PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
-                    _ => None,
+                    _ => {
+                        // For computed keys, check the expression
+                        if obj_prop.computed {
+                            match obj_prop.key.as_expression() {
+                                // Computed string literal: `['outputs']: value`
+                                Some(oxc_ast::ast::Expression::StringLiteral(lit)) => Some(lit.value.as_str()),
+                                // Computed template literal with no expressions: `[\`outputs\`]: value`
+                                Some(oxc_ast::ast::Expression::TemplateLiteral(tpl))
+                                    if tpl.expressions.is_empty() =>
+                                {
+                                    tpl.quasis.first().map(|q| q.value.raw.as_str())
+                                }
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        }
+                    }
                 };
 
                 if prop_name == Some("outputs") {
                     // This is a top-level outputs property, not inside hostDirectives
-                    let span = find_property_key_span(metadata, "outputs").unwrap_or(metadata.span);
-                    ctx.diagnostic(no_outputs_metadata_property_diagnostic(span));
+                    // Use the property span for better error highlighting
+                    ctx.diagnostic(no_outputs_metadata_property_diagnostic(obj_prop.span));
                     return;
                 }
             }

@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, get_lifecycle_method_order, is_lifecycle_method},
+    utils::{get_class_angular_decorator, get_lifecycle_method_order, is_lifecycle_method}
 };
 
 fn sort_lifecycle_methods_diagnostic(span: Span) -> OxcDiagnostic {

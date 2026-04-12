@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, get_decorator_name},
+    utils::{get_class_angular_decorator, get_decorator_name}
 };
 
 fn prefer_inject_diagnostic(span: Span) -> OxcDiagnostic {
@@ -190,8 +190,8 @@ fn is_primitive_type(type_annotation: &oxc_ast::ast::TSTypeAnnotation<'_>) -> bo
                 false
             }
         }
-        _ => false,
-    }
+        _ => false
+}
 }
 
 fn looks_like_injectable_type(type_annotation: &oxc_ast::ast::TSTypeAnnotation<'_>) -> bool {
@@ -206,8 +206,8 @@ fn looks_like_injectable_type(type_annotation: &oxc_ast::ast::TSTypeAnnotation<'
                 false
             }
         }
-        _ => false,
-    }
+        _ => false
+}
 }
 
 #[test]

@@ -1,16 +1,15 @@
 use oxc_ast::{AstKind, ast::Expression};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
 use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
     utils::{
-        get_decorator_call, get_decorator_identifier, get_decorator_name, has_on_prefix,
-        is_angular_core_import,
-    },
+        get_decorator_call, get_decorator_name, has_on_prefix
+}
 };
 
 fn no_output_on_prefix_diagnostic(span: Span, name: &str) -> OxcDiagnostic {
@@ -121,32 +120,28 @@ impl NoOutputOnPrefix {
                 continue;
             }
 
-            let Some(ident) = get_decorator_identifier(decorator) else {
-                continue;
-            };
-
-            if !is_angular_core_import(ident, ctx) {
-                continue;
-            }
+            // Note: Match ESLint behavior - does not verify imports for exact parity
 
             // Get the alias or property name
             if let Some(call) = get_decorator_call(decorator)
                 && let Some(first_arg) = call.arguments.first() {
                     match first_arg {
                         oxc_ast::ast::Argument::StringLiteral(lit) => {
-                            return Some((lit.value.to_string(), prop.span));
+                            // Report on the alias string literal span (matching ESLint)
+                            return Some((lit.value.to_string(), lit.span));
                         }
                         oxc_ast::ast::Argument::ObjectExpression(obj) => {
-                            if let Some(alias) = get_alias_from_object(obj) {
-                                return Some((alias.to_string(), prop.span));
+                            if let Some((alias, alias_span)) = get_alias_from_object_with_span(obj) {
+                                // Report on the alias value span (matching ESLint)
+                                return Some((alias.to_string(), alias_span));
                             }
                         }
                         _ => {}
                     }
                 }
 
-            // Use property name if no alias
-            return prop.key.static_name().map(|name| (name.to_string(), prop.span));
+            // Use property name if no alias - report on property key span
+            return prop.key.static_name().zip(get_property_key_span(&prop.key)).map(|(name, span)| (name.to_string(), span));
         }
 
         // Check for output() signal function
@@ -163,24 +158,25 @@ impl NoOutputOnPrefix {
             return None;
         }
 
-        if !is_angular_core_import(callee.as_ref(), ctx) {
-            return None;
-        }
+        // Note: Match ESLint behavior - does not verify imports for exact parity
 
         // Check for alias in options object
         for arg in &call.arguments {
             if let oxc_ast::ast::Argument::ObjectExpression(obj) = arg
-                && let Some(alias) = get_alias_from_object(obj) {
-                    return Some((alias.to_string(), prop.span));
+                && let Some((alias, alias_span)) = get_alias_from_object_with_span(obj) {
+                    // Report on the alias value span (matching ESLint)
+                    return Some((alias.to_string(), alias_span));
                 }
         }
 
-        // Use property name
-        prop.key.static_name().map(|name| (name.to_string(), prop.span))
+        // Use property name - report on property key span
+        prop.key.static_name().zip(get_property_key_span(&prop.key)).map(|(name, span)| (name.to_string(), span))
     }
 }
 
-fn get_alias_from_object<'a>(obj: &'a oxc_ast::ast::ObjectExpression<'a>) -> Option<&'a str> {
+fn get_alias_from_object_with_span<'a>(
+    obj: &'a oxc_ast::ast::ObjectExpression<'a>,
+) -> Option<(&'a str, Span)> {
     use oxc_ast::ast::{ObjectPropertyKind, PropertyKey};
 
     for property in &obj.properties {
@@ -188,10 +184,20 @@ fn get_alias_from_object<'a>(obj: &'a oxc_ast::ast::ObjectExpression<'a>) -> Opt
             && let PropertyKey::StaticIdentifier(ident) = &prop.key
                 && ident.name.as_str() == "alias"
                     && let Expression::StringLiteral(lit) = &prop.value {
-                        return Some(lit.value.as_str());
+                        return Some((lit.value.as_str(), lit.span));
                     }
     }
     None
+}
+
+fn get_property_key_span(key: &oxc_ast::ast::PropertyKey<'_>) -> Option<Span> {
+    use oxc_ast::ast::PropertyKey;
+
+    match key {
+        PropertyKey::StaticIdentifier(ident) => Some(ident.span),
+        PropertyKey::PrivateIdentifier(ident) => Some(ident.span),
+        _ => Some(key.span()),
+    }
 }
 
 #[test]

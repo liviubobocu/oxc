@@ -8,9 +8,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        class_implements_interface, get_decorator_identifier, get_decorator_name,
-        is_angular_core_import,
-    },
+        class_implements_interface, get_decorator_name
+}
 };
 
 fn use_pipe_transform_interface_diagnostic(span: Span) -> OxcDiagnostic {
@@ -89,14 +88,8 @@ impl Rule for UsePipeTransformInterface {
             return;
         }
 
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
+        // Note: Match ESLint behavior - trigger on ANY decorator named "Pipe"
+        // ESLint does not verify imports, so we don't either for exact parity
 
         // Find the parent class
         let Some(class) = get_parent_class_from_decorator(node, ctx) else {

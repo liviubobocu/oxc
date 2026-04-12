@@ -91,8 +91,8 @@ impl Rule for NoImplicitTakeUntilDestroyed {
         // Check if this is a call to takeUntilDestroyed
         let callee_name = match &call_expr.callee {
             oxc_ast::ast::Expression::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+            _ => return
+};
 
         if callee_name != "takeUntilDestroyed" {
             return;

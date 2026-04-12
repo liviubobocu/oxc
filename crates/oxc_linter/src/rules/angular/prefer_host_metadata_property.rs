@@ -8,9 +8,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_decorator_identifier,
-        get_decorator_name, is_angular_core_import,
-    },
+        get_decorator_name
+}
 };
 
 fn prefer_host_metadata_property_diagnostic(span: Span, decorator_name: &str) -> OxcDiagnostic {
@@ -99,17 +98,8 @@ impl Rule for PreferHostMetadataProperty {
             return;
         }
 
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
-        // Report on any @HostBinding or @HostListener decorator
-        // (The original angular-eslint rule does not check if the class is a Component/Directive)
+        // Note: Match ESLint behavior - trigger on ANY decorator named HostBinding/HostListener
+        // ESLint does not verify imports, so we don't either for exact parity
         ctx.diagnostic(prefer_host_metadata_property_diagnostic(decorator.span, decorator_name));
     }
 }

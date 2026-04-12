@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_decorator_identifier, get_decorator_name, is_angular_core_import},
+    utils::{get_decorator_name}
 };
 
 fn prefer_output_readonly_diagnostic(span: Span, is_signal: bool) -> OxcDiagnostic {
@@ -88,13 +88,8 @@ impl Rule for PreferOutputReadonly {
             if name != "Output" {
                 return false;
             }
-
-            // Verify it's from @angular/core
-            let Some(ident) = get_decorator_identifier(decorator) else {
-                return false;
-            };
-
-            is_angular_core_import(ident, ctx)
+            // Note: Match ESLint behavior - does not verify imports for exact parity
+            true
         });
 
         if has_output_decorator {
@@ -131,8 +126,8 @@ fn is_output_type_annotation(type_ann: &oxc_ast::ast::TSType<'_>) -> bool {
             }
             false
         }
-        _ => false,
-    }
+        _ => false
+}
 }
 
 /// Check if an expression is a call to `output()` or `outputFromObservable()` from `@angular/core`
@@ -150,7 +145,8 @@ fn is_output_signal_call(expr: &Expression<'_>, ctx: &LintContext<'_>) -> bool {
         return false;
     }
 
-    is_angular_core_import(ident.as_ref(), ctx)
+    // Note: Match ESLint behavior - does not verify imports for exact parity
+    true
 }
 
 #[test]

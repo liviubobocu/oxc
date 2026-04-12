@@ -1,7 +1,7 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -10,9 +10,8 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        AngularDecoratorType, get_class_angular_decorator, get_decorator_identifier,
-        get_decorator_name, is_angular_core_import,
-    },
+        AngularDecoratorType, get_class_angular_decorator, get_decorator_name
+}
 };
 
 fn no_input_prefix_diagnostic(span: Span, prefix: &str) -> OxcDiagnostic {
@@ -30,7 +29,7 @@ fn no_input_prefix_diagnostic(span: Span, prefix: &str) -> OxcDiagnostic {
 pub struct NoInputPrefixConfig {
     /// Prefixes that should not be used for input names
     #[serde(default = "default_prefixes")]
-    prefixes: Vec<String>,
+    prefixes: Vec<String>
 }
 
 fn default_prefixes() -> Vec<String> {
@@ -45,7 +44,7 @@ impl Default for NoInputPrefixConfig {
 
 #[derive(Debug, Clone)]
 pub struct NoInputPrefix {
-    prefixes: Vec<String>,
+    prefixes: Vec<String>
 }
 
 impl Default for NoInputPrefix {
@@ -135,16 +134,7 @@ impl Rule for NoInputPrefix {
         if decorator_name != "Input" {
             return;
         }
-
-        // Verify it's from @angular/core
-        let Some(ident) = get_decorator_identifier(decorator) else {
-            return;
-        };
-
-        if !is_angular_core_import(ident, ctx) {
-            return;
-        }
-
+        // Note: Match ESLint behavior - does not verify imports for exact parity
         // Find the parent class to verify it's an Angular component/directive
         let Some(class) = get_parent_class(node, ctx) else {
             return;
@@ -161,20 +151,31 @@ impl Rule for NoInputPrefix {
             return;
         }
 
-        // Get the property name this decorator is applied to
-        let Some(input_name) = get_decorated_property_name(node, ctx) else {
+        // Get the property name and its span
+        let Some((input_name, property_span)) = get_decorated_property_name_with_span(node, ctx) else {
             return;
         };
 
-        // Check for alias in decorator arguments
-        let alias = get_input_alias(decorator);
-        let name_to_check = alias.as_ref().map_or(input_name.as_str(), String::as_str);
+        // Check for alias in decorator arguments (returns (alias_name, alias_span) if present)
+        let alias_info = get_input_alias_with_span(decorator);
 
-        // Check if the name starts with any of the forbidden prefixes
+        // Check property name first
         for prefix in &self.prefixes {
-            if starts_with_prefix(name_to_check, prefix) {
-                ctx.diagnostic(no_input_prefix_diagnostic(decorator.span, prefix));
+            if starts_with_prefix(&input_name, prefix) {
+                // Report on property key span (matching ESLint)
+                ctx.diagnostic(no_input_prefix_diagnostic(property_span, prefix));
                 return;
+            }
+        }
+
+        // Check alias if present
+        if let Some((alias, alias_span)) = alias_info {
+            for prefix in &self.prefixes {
+                if starts_with_prefix(&alias, prefix) {
+                    // Report on alias value span (matching ESLint)
+                    ctx.diagnostic(no_input_prefix_diagnostic(alias_span, prefix));
+                    return;
+                }
             }
         }
     }
@@ -192,19 +193,22 @@ fn get_parent_class<'a, 'b>(
     None
 }
 
-fn get_decorated_property_name<'a>(node: &AstNode<'a>, ctx: &LintContext<'a>) -> Option<String> {
+fn get_decorated_property_name_with_span<'a>(
+    node: &AstNode<'a>,
+    ctx: &LintContext<'a>,
+) -> Option<(String, Span)> {
     // The parent of the decorator should be the property definition
     let parent = ctx.nodes().parent_node(node.id());
 
     match parent.kind() {
         AstKind::PropertyDefinition(prop) => {
             if let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) = &prop.key {
-                return Some(ident.name.to_string());
+                return Some((ident.name.to_string(), ident.span));
             }
         }
         AstKind::AccessorProperty(prop) => {
             if let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) = &prop.key {
-                return Some(ident.name.to_string());
+                return Some((ident.name.to_string(), ident.span));
             }
         }
         _ => {}
@@ -212,29 +216,29 @@ fn get_decorated_property_name<'a>(node: &AstNode<'a>, ctx: &LintContext<'a>) ->
     None
 }
 
-fn get_input_alias(decorator: &oxc_ast::ast::Decorator<'_>) -> Option<String> {
+fn get_input_alias_with_span(decorator: &oxc_ast::ast::Decorator<'_>) -> Option<(String, Span)> {
     let call_expr = match &decorator.expression {
         oxc_ast::ast::Expression::CallExpression(call) => call,
-        _ => return None,
+        _ => return None
     };
 
     // @Input('alias') or @Input({ alias: 'alias' })
     let first_arg = call_expr.arguments.first()?;
 
     match first_arg {
-        oxc_ast::ast::Argument::StringLiteral(lit) => Some(lit.value.to_string()),
+        oxc_ast::ast::Argument::StringLiteral(lit) => Some((lit.value.to_string(), lit.span)),
         oxc_ast::ast::Argument::ObjectExpression(obj) => {
             for prop in &obj.properties {
                 if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(obj_prop) = prop
                     && let oxc_ast::ast::PropertyKey::StaticIdentifier(key) = &obj_prop.key
                         && key.name == "alias"
                             && let oxc_ast::ast::Expression::StringLiteral(lit) = &obj_prop.value {
-                                return Some(lit.value.to_string());
+                                return Some((lit.value.to_string(), lit.span));
                             }
             }
             None
         }
-        _ => None,
+        _ => None
     }
 }
 

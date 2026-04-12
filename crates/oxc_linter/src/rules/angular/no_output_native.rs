@@ -8,9 +8,9 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        get_decorator_call, get_decorator_identifier, get_decorator_name, is_angular_core_import,
-        is_native_event_name,
-    },
+        get_decorator_call, get_decorator_name,
+        is_native_event_name
+}
 };
 
 fn no_output_native_diagnostic(span: Span, event_name: &str) -> OxcDiagnostic {
@@ -112,13 +112,7 @@ impl NoOutputNative {
                 continue;
             }
 
-            let Some(ident) = get_decorator_identifier(decorator) else {
-                continue;
-            };
-
-            if !is_angular_core_import(ident, ctx) {
-                continue;
-            }
+            // Note: Match ESLint behavior - does not verify imports for exact parity
 
             // Get the alias or property name
             if let Some(call) = get_decorator_call(decorator)
@@ -154,9 +148,7 @@ impl NoOutputNative {
             return None;
         }
 
-        if !is_angular_core_import(callee.as_ref(), ctx) {
-            return None;
-        }
+        // Note: Match ESLint behavior - does not verify imports for exact parity
 
         // Check for alias in options object
         for arg in &call.arguments {
