@@ -82,18 +82,32 @@ impl Rule for UseComponentSelector {
         // Note: Match ESLint behavior - does not verify imports for exact parity
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
+            // No metadata object means @Component() with no arguments - invalid
+            ctx.diagnostic(use_component_selector_diagnostic(decorator.span));
             return;
         };
 
-        // Check if selector is present and non-empty
+        // Check if selector is present and valid
+        // ESLint accepts: non-empty string literals and template literals
         match get_metadata_property(metadata, "selector") {
             None => {
+                // No selector property at all
                 ctx.diagnostic(use_component_selector_diagnostic(decorator.span));
             }
-            Some(Expression::StringLiteral(lit)) if lit.value.is_empty() => {
+            Some(Expression::StringLiteral(lit)) => {
+                // Empty string literal is invalid
+                if lit.value.is_empty() {
+                    ctx.diagnostic(use_component_selector_diagnostic(decorator.span));
+                }
+                // Non-empty string literal is valid
+            }
+            Some(Expression::TemplateLiteral(_)) => {
+                // Template literals are always valid (ESLint behavior)
+            }
+            _ => {
+                // All other expression types are invalid (including identifiers)
                 ctx.diagnostic(use_component_selector_diagnostic(decorator.span));
             }
-            _ => {}
         }
     }
 }
@@ -117,6 +131,15 @@ fn test() {
         import { Component } from '@angular/core';
         @Component({
             selector: '[appTest]',
+            template: ''
+        })
+        class TestComponent {}
+        ",
+        // Component with template literal selector
+        r"
+        import { Component } from '@angular/core';
+        @Component({
+            selector: `app-test`,
             template: ''
         })
         class TestComponent {}
@@ -181,6 +204,26 @@ fn test() {
         import { Component } from '@angular/core';
         @Component({
             templateUrl: './test.component.html'
+        })
+        class TestComponent {}
+        ",
+        // Component with identifier reference (shorthand) - ESLint rejects this
+        r"
+        import { Component } from '@angular/core';
+        const selector = 'app-test';
+        @Component({
+            selector,
+            template: ''
+        })
+        class TestComponent {}
+        ",
+        // Component with identifier reference (longhand) - ESLint rejects this
+        r"
+        import { Component } from '@angular/core';
+        const selectorVar = 'app-test';
+        @Component({
+            selector: selectorVar,
+            template: ''
         })
         class TestComponent {}
         ",

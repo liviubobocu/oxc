@@ -502,17 +502,32 @@ pub fn get_metadata_string_value<'a>(obj: &'a ObjectExpression<'a>, key: &str) -
 }
 
 /// Check if a class implements a specific interface by checking the implements clause.
+/// Supports both simple names (e.g., `PipeTransform`) and qualified names (e.g., `ng.PipeTransform`).
 pub fn class_implements_interface(class: &oxc_ast::ast::Class<'_>, interface_name: &str) -> bool {
     if class.implements.is_empty() {
         return false;
     }
 
     class.implements.iter().any(|ts_impl| {
-        if let oxc_ast::ast::TSTypeName::IdentifierReference(ident) = &ts_impl.expression {
-            return ident.name.as_str() == interface_name;
+        match &ts_impl.expression {
+            // Simple identifier: implements PipeTransform
+            oxc_ast::ast::TSTypeName::IdentifierReference(ident) => {
+                ident.name.as_str() == interface_name
+            }
+            // Qualified name: implements ng.PipeTransform
+            oxc_ast::ast::TSTypeName::QualifiedName(qualified) => {
+                get_qualified_name_final_identifier(qualified) == interface_name
+            }
+            _ => false,
         }
-        false
     })
+}
+
+/// Recursively extract the final identifier from a qualified name.
+/// For `ng.PipeTransform`, returns "PipeTransform".
+/// For `a.b.c.PipeTransform`, returns "PipeTransform".
+fn get_qualified_name_final_identifier<'a>(qualified: &oxc_ast::ast::TSQualifiedName<'a>) -> &'a str {
+    qualified.right.name.as_str()
 }
 
 /// Get the decorator type from a decorator name.
@@ -557,7 +572,7 @@ pub fn get_class_angular_decorator_lenient<'a, 'b>(
     class: &'b Class<'a>,
     _ctx: &'b LintContext<'a>,
 ) -> Option<(AngularDecoratorType, &'b Decorator<'a>)> {
-    use AngularDecoratorType::{Component, Directive, Injectable, Pipe};
+    use AngularDecoratorType::{Component, Directive, Injectable, NgModule, Pipe};
 
     for decorator in &class.decorators {
         let Expression::CallExpression(call_expr) = &decorator.expression else {
@@ -573,6 +588,7 @@ pub fn get_class_angular_decorator_lenient<'a, 'b>(
             "Directive" => Directive,
             "Injectable" => Injectable,
             "Pipe" => Pipe,
+            "NgModule" => NgModule,
             _ => continue,
         };
 

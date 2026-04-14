@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, is_lifecycle_method}
+    utils::{get_class_angular_decorator_lenient, is_lifecycle_method}
 };
 
 fn require_lifecycle_on_prototype_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {
@@ -82,51 +82,115 @@ declare_oxc_lint!(
     /// ```
     RequireLifecycleOnPrototype,
     angular,
-    correctness,
-    pending
+    correctness
 );
 
 impl Rule for RequireLifecycleOnPrototype {
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
-        let AstKind::PropertyDefinition(prop) = node.kind() else {
-            return;
-        };
-
-        // Get property name
-        let prop_name = match &prop.key {
-            oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => ident.name.as_str(),
-            _ => return
-};
-
-        // Check if this is a lifecycle method name
-        if !is_lifecycle_method(prop_name) {
-            return;
+        match node.kind() {
+            AstKind::PropertyDefinition(prop) => {
+                check_property_definition(prop, node, ctx);
+            }
+            AstKind::AssignmentExpression(assignment) => {
+                check_assignment_expression(assignment, ctx);
+            }
+            _ => {}
         }
+    }
+}
 
-        // Check if the value is a function expression or arrow function
-        let is_function_value = prop.value.as_ref().is_some_and(|value| {
+fn check_property_definition<'a>(
+    prop: &oxc_ast::ast::PropertyDefinition<'a>,
+    node: &AstNode<'a>,
+    ctx: &LintContext<'a>,
+) {
+    // Get property name - handle both static identifiers and computed properties
+    let prop_name = match &prop.key {
+        oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => ident.name.as_str(),
+        oxc_ast::ast::PropertyKey::StringLiteral(lit) => lit.value.as_str(),
+        _ => return,
+    };
+
+    // Check if this is a lifecycle method name
+    if !is_lifecycle_method(prop_name) {
+        return;
+    }
+
+    // ESLint rule checks for ANY value assignment, not just functions
+    // This includes: ngOnInit = func, ngOnInit = () => {}, ngOnInit = function() {}
+    // All of these are violations - lifecycle methods should be on the prototype
+    if prop.value.is_none() {
+        return;
+    }
+
+    // Find the parent class
+    let Some(class) = get_parent_class(node, ctx) else {
+        return;
+    };
+
+    // Check if the class has an Angular decorator
+    if get_class_angular_decorator_lenient(class, ctx).is_none() {
+        return;
+    }
+
+    ctx.diagnostic(require_lifecycle_on_prototype_diagnostic(prop.key.span(), prop_name));
+}
+
+fn check_assignment_expression<'a>(
+    assignment: &oxc_ast::ast::AssignmentExpression<'a>,
+    ctx: &LintContext<'a>,
+) {
+    use oxc_ast::ast::{AssignmentTarget, Expression};
+
+    // Extract the property name and object from the member expression
+    let (prop_name, span, object_expr) = match &assignment.left {
+        AssignmentTarget::StaticMemberExpression(static_member) => (
+            static_member.property.name.as_str(),
+            static_member.property.span,
+            &static_member.object,
+        ),
+        AssignmentTarget::ComputedMemberExpression(computed_member) => {
+            // Handle this['ngOnInit'] or component['ngOnDestroy']
+            let prop_name = match &computed_member.expression {
+                Expression::StringLiteral(lit) => lit.value.as_str(),
+                _ => return,
+            };
+            (prop_name, computed_member.expression.span(), &computed_member.object)
+        }
+        _ => return,
+    };
+
+    // Check if this is a lifecycle method name
+    if !is_lifecycle_method(prop_name) {
+        return;
+    }
+
+    // Exclude assignments to .prototype.* (e.g., type.prototype.ngOnDestroy = ...)
+    // These are valid ways to add lifecycle methods
+    if is_prototype_assignment(object_expr) {
+        return;
+    }
+
+    ctx.diagnostic(require_lifecycle_on_prototype_diagnostic(span, prop_name));
+}
+
+fn is_prototype_assignment(expr: &oxc_ast::ast::Expression) -> bool {
+    use oxc_ast::ast::Expression;
+
+    // Check for patterns like: type.prototype, (type.prototype as any), type['prototype']
+    match expr {
+        Expression::StaticMemberExpression(static_member) => {
+            static_member.property.name.as_str() == "prototype"
+        }
+        Expression::ComputedMemberExpression(computed_member) => {
             matches!(
-                value,
-                oxc_ast::ast::Expression::ArrowFunctionExpression(_)
-                    | oxc_ast::ast::Expression::FunctionExpression(_)
+                &computed_member.expression,
+                Expression::StringLiteral(lit) if lit.value.as_str() == "prototype"
             )
-        });
-
-        if !is_function_value {
-            return;
         }
-
-        // Find the parent class
-        let Some(class) = get_parent_class(node, ctx) else {
-            return;
-        };
-
-        // Check if the class has an Angular decorator
-        if get_class_angular_decorator(class, ctx).is_none() {
-            return;
-        }
-
-        ctx.diagnostic(require_lifecycle_on_prototype_diagnostic(prop.key.span(), prop_name));
+        Expression::TSAsExpression(as_expr) => is_prototype_assignment(&as_expr.expression),
+        Expression::ParenthesizedExpression(paren) => is_prototype_assignment(&paren.expression),
+        _ => false,
     }
 }
 
@@ -188,6 +252,59 @@ fn test() {
             ngOnInit = () => {};
         }
         ",
+        // Assigning to prototype is valid
+        r"
+        @Component({})
+        class Test {}
+        function hook(type) {
+            type.prototype.ngOnDestroy = () => {};
+        }
+        hook(Test);
+        ",
+        // Assigning to prototype with type cast
+        r"
+        @Component({})
+        class Test {}
+        function hook(type) {
+            (type.prototype as any).ngOnDestroy = () => {};
+        }
+        hook(Test);
+        ",
+        // Assigning to prototype with bracket notation
+        r"
+        @Component({})
+        class Test {}
+        function hook(type) {
+            type['prototype'].ngOnDestroy = () => {};
+        }
+        hook(Test);
+        ",
+        // Property not named after lifecycle method
+        r"
+        @Component({})
+        class Test {
+            onDestroy = () => {}
+        }
+        ",
+        // Assignment to non-lifecycle property in constructor
+        r"
+        @Component({})
+        class Test {
+            constructor() {
+                this.onDestroy = () => {}
+            }
+        }
+        ",
+        // Local variable assignment (not a member)
+        r"
+        @Component({})
+        class Test {
+            constructor() {
+                let ngOnDestroy;
+                ngOnDestroy = () => {};
+            }
+        }
+        ",
     ];
 
     let fail = vec![
@@ -243,9 +360,59 @@ fn test() {
             ngOnDestroy = () => {};
         }
         ",
-        // NOTE: Assignment expression detection (this.ngOnInit = () => {}) is a potential
-        // enhancement tracked for future implementation. Angular-eslint checks this pattern
-        // but it requires more complex AST traversal in oxlint.
+        // Property initialized to non-function value
+        r"
+        import { Component } from '@angular/core';
+        @Component({
+            selector: 'app-test',
+            template: ''
+        })
+        class TestComponent {
+            ngOnInit = func;
+        }
+        ",
+        // Assignment in constructor
+        r"
+        class Test {
+            constructor() {
+                this.ngOnDestroy = func;
+            }
+        }
+        ",
+        // Assignment in constructor with bracket notation
+        r"
+        class Test {
+            constructor() {
+                this['ngOnDestroy'] = func;
+            }
+        }
+        ",
+        // Assignment in method
+        r"
+        class Test {
+            run() {
+                this.ngOnDestroy = func;
+            }
+        }
+        ",
+        // Assignment outside class
+        r"
+        function hook(component) {
+            component.ngOnDestroy = func;
+        }
+        ",
+        // Assignment with type cast
+        r"
+        function hook(component) {
+            (component as any).ngOnDestroy = func;
+        }
+        ",
+        // Computed property name with string literal
+        r"
+        class Test {
+            ['ngOnDestroy'] = func;
+        }
+        ",
     ];
 
     Tester::new(RequireLifecycleOnPrototype::NAME, RequireLifecycleOnPrototype::PLUGIN, pass, fail)

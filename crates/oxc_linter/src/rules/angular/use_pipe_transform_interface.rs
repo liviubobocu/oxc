@@ -75,46 +75,31 @@ declare_oxc_lint!(
 
 impl Rule for UsePipeTransformInterface {
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
-        let AstKind::Decorator(decorator) = node.kind() else {
+        let AstKind::Class(class) = node.kind() else {
             return;
         };
 
-        // Only check @Pipe decorator
-        let Some(decorator_name) = get_decorator_name(decorator) else {
+        // Check if the class has a @Pipe decorator
+        let pipe_decorator = class.decorators.iter().find(|decorator| {
+            get_decorator_name(decorator).is_some_and(|name| name == "Pipe")
+        });
+
+        let Some(pipe_decorator) = pipe_decorator else {
             return;
         };
-
-        if decorator_name != "Pipe" {
-            return;
-        }
 
         // Note: Match ESLint behavior - trigger on ANY decorator named "Pipe"
         // ESLint does not verify imports, so we don't either for exact parity
-
-        // Find the parent class
-        let Some(class) = get_parent_class_from_decorator(node, ctx) else {
-            return;
-        };
 
         // Check if the class implements PipeTransform
         if class_implements_interface(class, "PipeTransform") {
             return;
         }
 
-        ctx.diagnostic(use_pipe_transform_interface_diagnostic(decorator.span));
+        // Report on the class identifier if present, otherwise on the decorator
+        let span = class.id.as_ref().map_or(pipe_decorator.span, |id| id.span);
+        ctx.diagnostic(use_pipe_transform_interface_diagnostic(span));
     }
-}
-
-fn get_parent_class_from_decorator<'a, 'b>(
-    node: &'b crate::AstNode<'a>,
-    ctx: &'b LintContext<'a>,
-) -> Option<&'b oxc_ast::ast::Class<'a>> {
-    for ancestor in ctx.nodes().ancestors(node.id()) {
-        if let AstKind::Class(class) = ancestor.kind() {
-            return Some(class);
-        }
-    }
-    None
 }
 
 #[test]

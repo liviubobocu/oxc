@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, is_lifecycle_method}
+    utils::{get_class_angular_decorator_lenient, is_lifecycle_method}
 };
 
 fn no_empty_lifecycle_method_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {
@@ -98,7 +98,7 @@ impl Rule for NoEmptyLifecycleMethod {
         };
 
         // Check if the class has an Angular decorator
-        if get_class_angular_decorator(class, ctx).is_none() {
+        if get_class_angular_decorator_lenient(class, ctx).is_none() {
             return;
         }
 

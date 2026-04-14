@@ -8,8 +8,7 @@ use oxc_span::Span;
 use crate::{
     AstNode,
     context::LintContext,
-    rule::Rule,
-    utils::{AngularDecoratorType, get_class_angular_decorator}
+    rule::Rule
 };
 
 fn prefer_signal_model_diagnostic(span: Span, input_name: &str) -> OxcDiagnostic {
@@ -82,17 +81,9 @@ impl Rule for PreferSignalModel {
             return;
         };
 
-        // Check if the class has a @Component or @Directive decorator
-        let Some((decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
-            return;
-        };
-
-        if !matches!(
-            decorator_type,
-            AngularDecoratorType::Component | AngularDecoratorType::Directive
-        ) {
-            return;
-        }
+        // Note: ESLint does not check for @Component/@Directive decorators
+        // It applies to ANY class with input()/output() pairs
+        // This matches ESLint parity - no decorator filtering
 
         // Collect all input() and output() signal calls
         let mut inputs: BTreeMap<String, Span> = BTreeMap::new();
@@ -149,27 +140,6 @@ fn get_property_name<'a>(key: &'a oxc_ast::ast::PropertyKey<'a>) -> Option<&'a s
         oxc_ast::ast::PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
         _ => None
 }
-}
-
-fn is_angular_core_import_manual(
-    ident: &oxc_ast::ast::IdentifierReference<'_>,
-    ctx: &LintContext<'_>,
-) -> bool {
-    let reference = ctx.scoping().get_reference(ident.reference_id());
-    let Some(symbol_id) = reference.symbol_id() else {
-        return false;
-    };
-
-    if !ctx.scoping().symbol_flags(symbol_id).is_import() {
-        return false;
-    }
-
-    let declaration_id = ctx.scoping().symbol_declaration(symbol_id);
-    let AstKind::ImportDeclaration(import_decl) = ctx.nodes().parent_kind(declaration_id) else {
-        return false;
-    };
-
-    import_decl.source.value.as_str() == "@angular/core"
 }
 
 #[test]

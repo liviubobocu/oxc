@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, is_lifecycle_method}
+    utils::{get_class_angular_decorator_lenient, is_lifecycle_method}
 };
 
 fn no_lifecycle_call_diagnostic(span: Span, method_name: &str) -> OxcDiagnostic {
@@ -84,30 +84,50 @@ declare_oxc_lint!(
     /// ```
     NoLifecycleCall,
     angular,
-    pedantic,
-    pending
+    pedantic
 );
 
 impl Rule for NoLifecycleCall {
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
+        // We're looking for CallExpression nodes where the callee is a MemberExpression
+        // calling a lifecycle method. This matches ESLint's selector:
+        // `ClassDeclaration CallExpression > MemberExpression[property.name=...]`
         let AstKind::CallExpression(call) = node.kind() else {
             return;
         };
 
-        // Check if it's a member expression call like `this.ngOnInit()` or `instance.ngOnInit()`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
-            return;
+        // Extract the method name from the callee
+        let method_name = match &call.callee {
+            Expression::StaticMemberExpression(member) => {
+                // Extract the property name from the identifier
+                member.property.name.as_str()
+            }
+            Expression::ComputedMemberExpression(member) => {
+                // For computed member expressions, we can only handle string literals
+                let Expression::StringLiteral(lit) = &member.expression else {
+                    return;
+                };
+                lit.value.as_str()
+            }
+            _ => {
+                return;
+            }
         };
-
-        let method_name = member.property.name.as_str();
 
         // Check if it's a lifecycle method
         if !is_lifecycle_method(method_name) {
             return;
         }
 
+        // Get the object being called on
+        let object = match &call.callee {
+            Expression::StaticMemberExpression(member) => &member.object,
+            Expression::ComputedMemberExpression(member) => &member.object,
+            _ => return,
+        };
+
         // Allow super.ngXxx() calls within the same lifecycle method
-        if is_super_call_in_same_lifecycle(&member.object, method_name, node, ctx) {
+        if is_super_call_in_same_lifecycle(object, method_name, node, ctx) {
             return;
         }
 
@@ -116,7 +136,7 @@ impl Rule for NoLifecycleCall {
             return;
         };
 
-        if get_class_angular_decorator(class, ctx).is_none() {
+        if get_class_angular_decorator_lenient(class, ctx).is_none() {
             return;
         }
 

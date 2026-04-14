@@ -8,7 +8,7 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        AngularDecoratorType, get_class_angular_decorator, is_lifecycle_method,
+        AngularDecoratorType, get_class_angular_decorator_lenient, is_lifecycle_method,
         is_lifecycle_valid_for_decorator
 }
 };
@@ -98,7 +98,8 @@ impl Rule for ContextualLifecycle {
         };
 
         // Check if the class has an Angular decorator and get its type
-        let Some((decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
+        // Use lenient matching to match ESLint's behavior (name-based, not import-based)
+        let Some((decorator_type, _)) = get_class_angular_decorator_lenient(class, ctx) else {
             return;  // Just return - ESLint doesn't check non-Angular classes
         };
 

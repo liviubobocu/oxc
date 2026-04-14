@@ -72,8 +72,7 @@ declare_oxc_lint!(
     /// ```
     NoAsyncLifecycleMethod,
     angular,
-    correctness,
-    pending
+    correctness
 );
 
 impl Rule for NoAsyncLifecycleMethod {

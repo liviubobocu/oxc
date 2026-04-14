@@ -4714,7 +4714,7 @@ impl RuleRunner for crate::rules::angular::pipe_prefix::PipePrefix {
 
 impl RuleRunner for crate::rules::angular::use_pipe_transform_interface::UsePipeTransformInterface {
     const NODE_TYPES: Option<&AstTypesBitset> =
-        Some(&AstTypesBitset::from_types(&[AstType::Decorator]));
+        Some(&AstTypesBitset::from_types(&[AstType::Class]));
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Run;
 }
 
@@ -4839,8 +4839,10 @@ impl RuleRunner for crate::rules::angular::prefer_signal_model::PreferSignalMode
 impl RuleRunner
     for crate::rules::angular::require_lifecycle_on_prototype::RequireLifecycleOnPrototype
 {
-    const NODE_TYPES: Option<&AstTypesBitset> =
-        Some(&AstTypesBitset::from_types(&[AstType::PropertyDefinition]));
+    const NODE_TYPES: Option<&AstTypesBitset> = Some(&AstTypesBitset::from_types(&[
+        AstType::AssignmentExpression,
+        AstType::PropertyDefinition,
+    ]));
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Run;
 }
 

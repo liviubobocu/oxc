@@ -7,7 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, get_decorator_name}
+    utils::{get_class_angular_decorator_lenient, get_decorator_name}
 };
 
 fn prefer_inject_diagnostic(span: Span) -> OxcDiagnostic {
@@ -105,7 +105,7 @@ impl Rule for PreferInject {
         };
 
         // Check if the class has a relevant Angular decorator
-        let Some((decorator_type, _)) = get_class_angular_decorator(class, ctx) else {
+        let Some((decorator_type, _)) = get_class_angular_decorator_lenient(class, ctx) else {
             return;
         };
 
@@ -138,20 +138,29 @@ impl Rule for PreferInject {
                 continue;
             }
 
-            // Skip if it has no type annotation (can't determine if it's DI)
+            // Check if the parameter is a parameter property (has accessibility or readonly modifier)
+            // This is the primary indicator of dependency injection in Angular
+            let has_modifier = param.accessibility.is_some() || param.readonly;
+
+            // If it has a modifier, it's a parameter property - report it
+            if has_modifier {
+                ctx.diagnostic(prefer_inject_diagnostic(param.span));
+                continue;
+            }
+
+            // For parameters without modifiers or decorators, check if the type suggests DI
+            // If the type is NOT a primitive, it's likely a dependency injection candidate
             let Some(type_annotation) = &param.type_annotation else {
                 continue;
             };
 
-            // Check if the type is a primitive (skip primitives without DI decorators)
+            // Check if the type is a primitive (skip primitives without DI decorators or modifiers)
             if is_primitive_type(type_annotation) {
                 continue;
             }
 
-            // Check if the type looks like a service/injectable class (starts with uppercase)
-            if looks_like_injectable_type(type_annotation) {
-                ctx.diagnostic(prefer_inject_diagnostic(param.span));
-            }
+            // Any non-primitive type is a potential DI candidate - report it
+            ctx.diagnostic(prefer_inject_diagnostic(param.span));
         }
     }
 }
@@ -190,24 +199,8 @@ fn is_primitive_type(type_annotation: &oxc_ast::ast::TSTypeAnnotation<'_>) -> bo
                 false
             }
         }
-        _ => false
-}
-}
-
-fn looks_like_injectable_type(type_annotation: &oxc_ast::ast::TSTypeAnnotation<'_>) -> bool {
-    use oxc_ast::ast::TSType;
-
-    match &type_annotation.type_annotation {
-        TSType::TSTypeReference(type_ref) => {
-            if let oxc_ast::ast::TSTypeName::IdentifierReference(ident) = &type_ref.type_name {
-                // Check if the type name starts with uppercase (likely a class/service)
-                ident.name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-            } else {
-                false
-            }
-        }
-        _ => false
-}
+        _ => false,
+    }
 }
 
 #[test]

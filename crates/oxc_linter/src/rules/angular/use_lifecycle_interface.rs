@@ -77,8 +77,7 @@ declare_oxc_lint!(
     /// ```
     UseLifecycleInterface,
     angular,
-    pedantic,
-    pending
+    pedantic
 );
 
 impl Rule for UseLifecycleInterface {
