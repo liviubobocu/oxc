@@ -4679,14 +4679,17 @@ impl RuleRunner for crate::rules::angular::no_inputs_metadata_property::NoInputs
 }
 
 impl RuleRunner for crate::rules::angular::no_output_native::NoOutputNative {
-    const NODE_TYPES: Option<&AstTypesBitset> =
-        Some(&AstTypesBitset::from_types(&[AstType::PropertyDefinition]));
+    const NODE_TYPES: Option<&AstTypesBitset> = Some(&AstTypesBitset::from_types(&[
+        AstType::Decorator,
+        AstType::MethodDefinition,
+        AstType::PropertyDefinition,
+    ]));
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Run;
 }
 
 impl RuleRunner for crate::rules::angular::no_output_on_prefix::NoOutputOnPrefix {
     const NODE_TYPES: Option<&AstTypesBitset> =
-        Some(&AstTypesBitset::from_types(&[AstType::PropertyDefinition]));
+        Some(&AstTypesBitset::from_types(&[AstType::Decorator, AstType::PropertyDefinition]));
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Run;
 }
 

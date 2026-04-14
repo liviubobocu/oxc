@@ -2,13 +2,14 @@ use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::Span;
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
     AstNode,
     context::LintContext,
-    rule::Rule,
-    utils::{get_decorator_name}
+    rule::{DefaultRuleConfig, Rule},
+    utils::get_decorator_name,
 };
 
 fn component_class_suffix_diagnostic(span: Span, suffixes: &[String]) -> OxcDiagnostic {
@@ -23,11 +24,12 @@ fn component_class_suffix_diagnostic(span: Span, suffixes: &[String]) -> OxcDiag
     .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct ComponentClassSuffixConfig {
+    /// List of allowed suffixes for component class names.
     #[serde(default = "default_suffixes")]
-    suffixes: Vec<String>
+    suffixes: Vec<String>,
 }
 
 fn default_suffixes() -> Vec<String> {
@@ -107,16 +109,16 @@ declare_oxc_lint!(
     ComponentClassSuffix,
     angular,
     pedantic,
-    pending
+    pending,
+    config = ComponentClassSuffixConfig
 );
 
 impl Rule for ComponentClassSuffix {
     fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        if value.is_null() {
-            return Ok(Self::default());
-        }
-        let config_value = value.get(0).unwrap_or(&value);
-        serde_json::from_value::<ComponentClassSuffixConfig>(config_value.clone()).map(Into::into)
+        let config =
+            serde_json::from_value::<DefaultRuleConfig<ComponentClassSuffixConfig>>(value)
+                .map(DefaultRuleConfig::into_inner)?;
+        Ok(Self { suffixes: config.suffixes })
     }
 
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
