@@ -2,6 +2,7 @@ use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::{GetSpan, Span};
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
@@ -24,17 +25,21 @@ fn sort_keys_diagnostic(span: Span, decorator: &str, expected_order: &str) -> Ox
     .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "PascalCase", default, deny_unknown_fields)]
 pub struct SortKeysInTypeDecoratorConfig {
+    /// Expected order of keys in @Component decorator metadata.
     #[serde(default = "default_component_order")]
     component: Vec<String>,
+    /// Expected order of keys in @Directive decorator metadata.
     #[serde(default = "default_directive_order")]
     directive: Vec<String>,
+    /// Expected order of keys in @NgModule decorator metadata.
     #[serde(default = "default_ng_module_order")]
     ng_module: Vec<String>,
+    /// Expected order of keys in @Pipe decorator metadata.
     #[serde(default = "default_pipe_order")]
-    pipe: Vec<String>
+    pipe: Vec<String>,
 }
 
 impl Default for SortKeysInTypeDecoratorConfig {
@@ -188,7 +193,8 @@ declare_oxc_lint!(
     SortKeysInTypeDecorator,
     angular,
     style,
-    pending
+    pending,
+    config = SortKeysInTypeDecoratorConfig
 );
 
 impl Rule for SortKeysInTypeDecorator {
@@ -318,109 +324,210 @@ fn test() {
     use crate::tester::Tester;
 
     let pass = vec![
-        // Correct order for Component
-        r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            styles: []
-        })
-        class TestComponent {}
-        ",
-        // Correct order for Directive
-        r"
-        import { Directive } from '@angular/core';
-        @Directive({
-            selector: '[appTest]',
-            standalone: true,
-            providers: []
-        })
-        class TestDirective {}
-        ",
-        // Correct order for NgModule
-        r"
-        import { NgModule } from '@angular/core';
-        @NgModule({
-            imports: [],
-            declarations: [],
-            providers: [],
-            exports: []
-        })
-        class TestModule {}
-        ",
-        // Correct order for Pipe
-        r"
-        import { Pipe } from '@angular/core';
-        @Pipe({
-            name: 'testPipe',
-            standalone: true,
-            pure: true
-        })
-        class TestPipe {}
-        ",
+        // Correct order for Component (default)
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styles: []
+            })
+            class TestComponent {}
+            ",
+            None,
+        ),
+        // Correct order for Directive (default)
+        (
+            r"
+            import { Directive } from '@angular/core';
+            @Directive({
+                selector: '[appTest]',
+                standalone: true,
+                providers: []
+            })
+            class TestDirective {}
+            ",
+            None,
+        ),
+        // Correct order for NgModule (default)
+        (
+            r"
+            import { NgModule } from '@angular/core';
+            @NgModule({
+                imports: [],
+                declarations: [],
+                providers: [],
+                exports: []
+            })
+            class TestModule {}
+            ",
+            None,
+        ),
+        // Correct order for Pipe (default)
+        (
+            r"
+            import { Pipe } from '@angular/core';
+            @Pipe({
+                name: 'testPipe',
+                standalone: true,
+                pure: true
+            })
+            class TestPipe {}
+            ",
+            None,
+        ),
         // Single property (no order needed)
-        r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test'
-        })
-        class TestComponent {}
-        ",
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test'
+            })
+            class TestComponent {}
+            ",
+            None,
+        ),
         // Empty object (no order needed)
-        r"
-        @Component({})
-        class TestComponent {}
-        ",
+        (
+            r"
+            @Component({})
+            class TestComponent {}
+            ",
+            None,
+        ),
+        // Custom order - correct order
+        (
+            r"
+            @Component({
+                selector: 'app-test',
+                templateUrl: './test.html',
+                styleUrl: './test.css'
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!([{ "Component": ["selector", "templateUrl", "styleUrl"] }])),
+        ),
+        // Custom order for NgModule - correct
+        (
+            r"
+            @NgModule({
+                declarations: [],
+                imports: []
+            })
+            class TestModule {}
+            ",
+            Some(serde_json::json!([{ "NgModule": ["declarations", "imports"] }])),
+        ),
     ];
 
     let fail = vec![
-        // Wrong order for Component (template before selector)
-        r"
-        import { Component } from '@angular/core';
-        @Component({
-            template: '',
-            selector: 'app-test'
-        })
-        class TestComponent {}
-        ",
-        // Wrong order for Component (styles before template)
-        r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            styles: [],
-            template: ''
-        })
-        class TestComponent {}
-        ",
-        // Wrong order for Directive
-        r"
-        import { Directive } from '@angular/core';
-        @Directive({
-            providers: [],
-            selector: '[appTest]'
-        })
-        class TestDirective {}
-        ",
-        // Wrong order for NgModule
-        r"
-        import { NgModule } from '@angular/core';
-        @NgModule({
-            exports: [],
-            imports: []
-        })
-        class TestModule {}
-        ",
-        // Wrong order for Pipe
-        r"
-        import { Pipe } from '@angular/core';
-        @Pipe({
-            pure: true,
-            name: 'testPipe'
-        })
-        class TestPipe {}
-        ",
+        // Wrong order for Component (template before selector) - default
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                template: '',
+                selector: 'app-test'
+            })
+            class TestComponent {}
+            ",
+            None,
+        ),
+        // Wrong order for Component (styles before template) - default
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                styles: [],
+                template: ''
+            })
+            class TestComponent {}
+            ",
+            None,
+        ),
+        // Wrong order for Directive - default
+        (
+            r"
+            import { Directive } from '@angular/core';
+            @Directive({
+                providers: [],
+                selector: '[appTest]'
+            })
+            class TestDirective {}
+            ",
+            None,
+        ),
+        // Wrong order for NgModule - default
+        (
+            r"
+            import { NgModule } from '@angular/core';
+            @NgModule({
+                exports: [],
+                imports: []
+            })
+            class TestModule {}
+            ",
+            None,
+        ),
+        // Wrong order for Pipe - default
+        (
+            r"
+            import { Pipe } from '@angular/core';
+            @Pipe({
+                pure: true,
+                name: 'testPipe'
+            })
+            class TestPipe {}
+            ",
+            None,
+        ),
+        // Custom order - wrong order (changeDetection before selector)
+        (
+            r"
+            @Component({
+                changeDetection: 0,
+                selector: 'app-test',
+                templateUrl: './test.html'
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!([{ "Component": ["selector", "templateUrl", "changeDetection"] }])),
+        ),
+        // Custom order for NgModule - wrong order
+        (
+            r"
+            @NgModule({
+                imports: [],
+                declarations: []
+            })
+            class TestModule {}
+            ",
+            Some(serde_json::json!([{ "NgModule": ["declarations", "imports"] }])),
+        ),
+        // Custom order for Directive - wrong order
+        (
+            r"
+            @Directive({
+                standalone: true,
+                selector: '[appTest]'
+            })
+            class TestDirective {}
+            ",
+            Some(serde_json::json!([{ "Directive": ["selector", "standalone"] }])),
+        ),
+        // Custom order for Pipe - wrong order
+        (
+            r"
+            @Pipe({
+                standalone: true,
+                name: 'testPipe'
+            })
+            class TestPipe {}
+            ",
+            Some(serde_json::json!([{ "Pipe": ["name", "standalone"] }])),
+        ),
     ];
 
     Tester::new(SortKeysInTypeDecorator::NAME, SortKeysInTypeDecorator::PLUGIN, pass, fail)

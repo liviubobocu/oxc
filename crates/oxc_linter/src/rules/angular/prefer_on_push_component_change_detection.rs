@@ -1,26 +1,24 @@
 use oxc_ast::{AstKind, ast::Expression};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::{GetSpan, Span};
+use oxc_span::Span;
 
 use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
     utils::{
-        get_component_metadata, get_decorator_name,
+        get_component_metadata, get_decorator_call, get_decorator_name,
         get_metadata_property
 }
 };
 
 fn prefer_on_push_diagnostic(span: Span) -> OxcDiagnostic {
     OxcDiagnostic::warn(
-        "Component should use `ChangeDetectionStrategy.OnPush` for better performance",
+        "The component's `changeDetection` value should be set to `ChangeDetectionStrategy.OnPush`",
     )
     .with_help(
-        "Add `changeDetection: ChangeDetectionStrategy.OnPush` to the component decorator. \
-        OnPush change detection only checks the component when its inputs change or when \
-        events are triggered within it.",
+        "Add `changeDetection: ChangeDetectionStrategy.OnPush` to the component decorator.",
     )
     .with_label(span)
 }
@@ -88,8 +86,22 @@ impl Rule for PreferOnPushComponentChangeDetection {
             return;
         }
         // Note: Match ESLint behavior - does not verify imports for exact parity
-        // Get the metadata object
+
+        // Get the call expression to check for arguments
+        let Some(call) = get_decorator_call(decorator) else {
+            return;
+        };
+
+        // Check if @Component() has no arguments - report on the decorator
+        if call.arguments.is_empty() {
+            ctx.diagnostic(prefer_on_push_diagnostic(decorator.span));
+            return;
+        }
+
+        // Get the metadata object (first argument must be an object expression)
         let Some(metadata) = get_component_metadata(decorator) else {
+            // First argument is not an object (e.g., @Component(options))
+            // ESLint does not report on this case
             return;
         };
 
@@ -100,34 +112,57 @@ impl Rule for PreferOnPushComponentChangeDetection {
                 ctx.diagnostic(prefer_on_push_diagnostic(decorator.span));
             }
             Some(expr) => {
-                if !is_on_push(expr) {
-                    // Report on the changeDetection value, matching ESLint
-                    let report_span = match expr {
-                        Expression::StaticMemberExpression(member) => member.property.span,
-                        _ => expr.span(),
-                    };
+                // Check if it's a problematic value
+                if let Some(report_span) = get_invalid_change_detection_span(expr) {
                     ctx.diagnostic(prefer_on_push_diagnostic(report_span));
                 }
+                // Note: ESLint does NOT report on variable references, function calls,
+                // or other expressions - only on explicit ChangeDetectionStrategy.X
+                // where X != OnPush, or on `undefined`
             }
         }
     }
 }
 
-fn is_on_push(expr: &Expression<'_>) -> bool {
+/// Returns the span to report on if the changeDetection value is invalid,
+/// or None if the value is valid or cannot be statically analyzed.
+///
+/// ESLint only reports errors for:
+/// 1. `changeDetection: undefined` - reports on the `undefined` identifier
+/// 2. `changeDetection: ChangeDetectionStrategy.X` where X != 'OnPush' - reports on the property name (X)
+///
+/// ESLint does NOT report for:
+/// - Variable references (e.g., `changeDetection: someVariable`)
+/// - Function calls (e.g., `changeDetection: getStrategy()`)
+/// - Other expressions that cannot be statically analyzed
+fn get_invalid_change_detection_span(expr: &Expression<'_>) -> Option<Span> {
     match expr {
-        // ChangeDetectionStrategy.OnPush
+        // Check for ChangeDetectionStrategy.X
         Expression::StaticMemberExpression(member) => {
             if let Expression::Identifier(obj) = &member.object {
-                obj.name.as_str() == "ChangeDetectionStrategy"
-                    && member.property.name.as_str() == "OnPush"
+                if obj.name.as_str() == "ChangeDetectionStrategy" {
+                    // Only report if it's NOT OnPush
+                    if member.property.name.as_str() != "OnPush" {
+                        // Report on the property name (e.g., "Default")
+                        return Some(member.property.span);
+                    }
+                }
+            }
+            // Not ChangeDetectionStrategy.X, don't report
+            None
+        }
+        // Check for `undefined` identifier
+        Expression::Identifier(ident) => {
+            if ident.name.as_str() == "undefined" {
+                Some(ident.span)
             } else {
-                false
+                // Variable reference - don't report (ESLint allows this)
+                None
             }
         }
-        // Numeric literal 0 (ChangeDetectionStrategy.OnPush = 0)
-        Expression::NumericLiteral(lit) => lit.value == 0.0,
-        _ => false
-}
+        // Any other expression (function call, etc.) - don't report
+        _ => None,
+    }
 }
 
 #[test]
@@ -135,125 +170,113 @@ fn test() {
     use crate::tester::Tester;
 
     let pass = vec![
+        // No class - just a plain class without decorator
+        r"class Test {}",
+        // @Component with options variable (not an object literal)
+        r"
+        const options = {};
+        @Component(options)
+        class Test {}
+        ",
         // OnPush change detection
         r"
-        import { Component, ChangeDetectionStrategy } from '@angular/core';
         @Component({
-            selector: 'app-test',
-            template: '',
-            changeDetection: ChangeDetectionStrategy.OnPush
+            changeDetection: ChangeDetectionStrategy.OnPush,
         })
-        class TestComponent {}
+        class Test {}
         ",
-        // OnPush with numeric value 0
+        // changeDetection with variable reference (ESLint allows this)
         r"
-        import { Component } from '@angular/core';
         @Component({
-            selector: 'app-test',
-            template: '',
-            changeDetection: 0
+            'changeDetection': changeDetection,
         })
-        class TestComponent {}
+        class Test {}
         ",
-        // Non-Angular Component
+        // Shorthand property syntax (ESLint allows this)
         r"
-        import { Component } from 'other-lib';
+        const changeDetection = ChangeDetectionStrategy.Default;
         @Component({
-            selector: 'app-test',
-            template: ''
+            changeDetection,
         })
-        class TestComponent {}
+        class Test {}
         ",
-        // Directive (not a component)
+        // Function call value (ESLint allows this)
         r"
-        import { Directive } from '@angular/core';
-        @Directive({
-            selector: '[appTest]'
-        })
-        class TestDirective {}
-        ",
-        // OnPush with string literal key
-        r"
-        import { Component, ChangeDetectionStrategy } from '@angular/core';
+        function changeDetection() {
+            return ChangeDetectionStrategy.OnPush;
+        }
+
         @Component({
-            selector: 'app-test',
-            template: '',
-            'changeDetection': ChangeDetectionStrategy.OnPush
+            ['changeDetection']: changeDetection(),
         })
-        class TestComponent {}
+        class Test {}
         ",
-        // OnPush with computed string literal key
+        // Template literal key with OnPush
         r"
-        import { Component, ChangeDetectionStrategy } from '@angular/core';
         @Component({
-            selector: 'app-test',
-            template: '',
-            ['changeDetection']: ChangeDetectionStrategy.OnPush
+            [`changeDetection`]: ChangeDetectionStrategy.OnPush,
         })
-        class TestComponent {}
+        class Test {}
+        ",
+        // NgModule (not a component)
+        r"
+        @NgModule({
+            bootstrap: [Foo]
+        })
+        class Test {}
         ",
     ];
 
     let fail = vec![
-        // No changeDetection property
+        // @Component() with no arguments
         r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: ''
-        })
-        class TestComponent {}
-        ",
-        // Default change detection
+      @Component()
+
+      class Test {}
+    ",
+        // @Component({}) with empty object
         r"
-        import { Component, ChangeDetectionStrategy } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            changeDetection: ChangeDetectionStrategy.Default
-        })
-        class TestComponent {}
-        ",
-        // Numeric value 1 (Default)
+      import type { ChangeDetectionStrategy } from '@angular/core';
+
+      @Component({})
+
+      class Test {}
+    ",
+        // @Component with computed key but no changeDetection
         r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            changeDetection: 1
-        })
-        class TestComponent {}
-        ",
-        // Standalone component without OnPush
+      import { Component } from '@angular/core';
+      const changeDetection = 'template';
+      @Component({ [changeDetection]: '' })
+
+      class Test {}
+    ",
+        // changeDetection: undefined
         r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            standalone: true
-        })
-        class TestComponent {}
-        ",
-        // String literal key with Default
+      @Component({ changeDetection: undefined })
+
+      class Test {}
+    ",
+        // String literal key with ChangeDetectionStrategy.Default
         r"
-        import { Component, ChangeDetectionStrategy } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            'changeDetection': ChangeDetectionStrategy.Default
-        })
-        class TestComponent {}
-        ",
-        // Computed key with Default
+      import * as ng from '@angular/core';
+      @Component({ 'changeDetection': ChangeDetectionStrategy.Default })
+
+      class Test {}
+    ",
+        // Computed string literal key with ChangeDetectionStrategy.Default
         r"
-        import { Component, ChangeDetectionStrategy } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            ['changeDetection']: ChangeDetectionStrategy.Default
-        })
-        class TestComponent {}
-        ",
+      import type { OnInit } from '@angular/core';
+      @Component({ ['changeDetection']: ChangeDetectionStrategy.Default })
+
+      class Test {}
+    ",
+        // Computed template literal key with ChangeDetectionStrategy.Default
+        r"
+      import ng from '@angular/core';
+      @Component({ [`changeDetection`]: ChangeDetectionStrategy.Default })
+
+      class Test {}
+    ",
     ];
 
     Tester::new(

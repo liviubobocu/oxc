@@ -1,4 +1,5 @@
 use oxc_ast::AstKind;
+use oxc_ast::ast::Expression;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::{GetSpan, Span};
@@ -14,14 +15,15 @@ use crate::{
 };
 
 fn consistent_component_styles_diagnostic(span: Span, message_id: &str) -> OxcDiagnostic {
+    // Match ESLint message format exactly
     let (message, help) = match message_id {
         "useStylesString" => (
-            "Component styles should use string format",
-            "Use a single string instead of an array for component styles: `styles: 'css-here'`",
+            "Use a `string` instead of a `string[]` for the `styles` property",
+            "Replace the array with a single string value",
         ),
         "useStylesArray" => (
-            "Component styles should use array format",
-            "Use an array for component styles: `styles: ['css-here']`",
+            "Use a `string[]` instead of a `string` for the `styles` property",
+            "Wrap the string in an array: `styles: ['css-here']`",
         ),
         "useStyleUrl" => (
             "Use `styleUrl` instead of `styleUrls` for a single stylesheet",
@@ -32,7 +34,7 @@ fn consistent_component_styles_diagnostic(span: Span, message_id: &str) -> OxcDi
             "Use `styleUrls: ['./style.css']` instead of `styleUrl: './style.css'`",
         ),
         _ => ("Use consistent style format", "Use consistent style format")
-};
+    };
     OxcDiagnostic::warn(message).with_help(help).with_label(span)
 }
 
@@ -169,56 +171,71 @@ impl Rule for ConsistentComponentStyles {
 
                 match prop_name {
                     Some("styles") => {
-                        let is_array =
-                            matches!(&obj_prop.value, oxc_ast::ast::Expression::ArrayExpression(_));
-
-                        match (&self.format, is_array) {
-                            (StyleFormat::String, true) => {
-                                // Using array but expecting string
-                                if let oxc_ast::ast::Expression::ArrayExpression(array) =
-                                    &obj_prop.value
-                                {
-                                    // Only report if it's a single-element array (could be converted to string)
+                        match &self.format {
+                            StyleFormat::String => {
+                                // In string mode, report single-element arrays that contain a literal/template
+                                if let Expression::ArrayExpression(array) = &obj_prop.value {
+                                    // Only report if it's a single-element array with a string/template literal
                                     if array.elements.len() == 1 {
-                                        // Report on the array value (matching ESLint)
-                                        ctx.diagnostic(consistent_component_styles_diagnostic(
-                                            obj_prop.value.span(),
-                                            "useStylesString",
-                                        ));
+                                        if let Some(first_element) = array.elements.first() {
+                                            if let Some(expr) = first_element.as_expression() {
+                                                // Check if element is a string literal or template literal
+                                                if matches!(expr, Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) {
+                                                    // Report on the array value (matching ESLint)
+                                                    ctx.diagnostic(consistent_component_styles_diagnostic(
+                                                        obj_prop.value.span(),
+                                                        "useStylesString",
+                                                    ));
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            (StyleFormat::Array, false) => {
-                                // Using string but expecting array
-                                // Report on the string value (matching ESLint)
-                                ctx.diagnostic(consistent_component_styles_diagnostic(
-                                    obj_prop.value.span(),
-                                    "useStylesArray",
-                                ));
+                            StyleFormat::Array => {
+                                // In array mode, report string literals and template literals
+                                // Only flag literal values, not complex expressions
+                                if matches!(&obj_prop.value, Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) {
+                                    // Report on the string/template value (matching ESLint)
+                                    ctx.diagnostic(consistent_component_styles_diagnostic(
+                                        obj_prop.value.span(),
+                                        "useStylesArray",
+                                    ));
+                                }
                             }
-                            _ => {}
                         }
                     }
                     Some("styleUrl") => {
                         // styleUrl is singular - in array mode, we expect styleUrls
+                        // Only report if the value is a string literal or template element
                         if matches!(self.format, StyleFormat::Array) {
-                            ctx.diagnostic(consistent_component_styles_diagnostic(
-                                obj_prop.span,
-                                "useStyleUrls",
-                            ));
+                            if matches!(&obj_prop.value, Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) {
+                                ctx.diagnostic(consistent_component_styles_diagnostic(
+                                    obj_prop.span,
+                                    "useStyleUrls",
+                                ));
+                            }
                         }
                     }
                     Some("styleUrls") => {
                         // styleUrls is plural - in string mode with single element, we expect styleUrl
-                        if matches!(self.format, StyleFormat::String)
-                            && let oxc_ast::ast::Expression::ArrayExpression(array) =
-                                &obj_prop.value
-                                && array.elements.len() == 1 {
-                                    ctx.diagnostic(consistent_component_styles_diagnostic(
-                                        obj_prop.span,
-                                        "useStyleUrl",
-                                    ));
+                        if matches!(self.format, StyleFormat::String) {
+                            if let Expression::ArrayExpression(array) = &obj_prop.value {
+                                if array.elements.len() == 1 {
+                                    // Check if the single element is a string literal or template literal
+                                    if let Some(first_element) = array.elements.first() {
+                                        if let Some(expr) = first_element.as_expression() {
+                                            if matches!(expr, Expression::StringLiteral(_) | Expression::TemplateLiteral(_)) {
+                                                ctx.diagnostic(consistent_component_styles_diagnostic(
+                                                    obj_prop.span,
+                                                    "useStyleUrl",
+                                                ));
+                                            }
+                                        }
+                                    }
                                 }
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -257,7 +274,7 @@ fn test() {
             ",
             None,
         ),
-        // Array format with array config
+        // Array format with array config (object format)
         (
             r"
             import { Component } from '@angular/core';
@@ -269,6 +286,19 @@ fn test() {
             class TestComponent {}
             ",
             Some(serde_json::json!([{ "format": "array" }])),
+        ),
+        // Array format with array config (shorthand format)
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styles: ['.class { color: red; }']
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["array"])),
         ),
         // Multiple styles in array (always allowed)
         (
@@ -296,6 +326,19 @@ fn test() {
             ",
             None,
         ),
+        // Template literal string with explicit "string" config
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styles: `.class { color: red; }`
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["string"])),
+        ),
         // styleUrl with string config (default) - singular is fine
         (
             r"
@@ -309,7 +352,7 @@ fn test() {
             ",
             None,
         ),
-        // styleUrls with array config
+        // styleUrls with array config (shorthand)
         (
             r"
             import { Component } from '@angular/core';
@@ -320,7 +363,7 @@ fn test() {
             })
             class TestComponent {}
             ",
-            Some(serde_json::json!([{ "format": "array" }])),
+            Some(serde_json::json!(["array"])),
         ),
         // Multiple styleUrls (always allowed with string config)
         (
@@ -330,6 +373,19 @@ fn test() {
                 selector: 'app-test',
                 template: '',
                 styleUrls: ['./test1.css', './test2.css']
+            })
+            class TestComponent {}
+            ",
+            None,
+        ),
+        // styleUrl with template literal - valid in string mode
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styleUrl: `./test.component.css`
             })
             class TestComponent {}
             ",
@@ -351,7 +407,20 @@ fn test() {
             ",
             None,
         ),
-        // String format with array config
+        // Single-element array with explicit "string" config (shorthand)
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styles: ['.class { color: red; }']
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["string"])),
+        ),
+        // String format with array config (object format)
         (
             r"
             import { Component } from '@angular/core';
@@ -363,6 +432,19 @@ fn test() {
             class TestComponent {}
             ",
             Some(serde_json::json!([{ "format": "array" }])),
+        ),
+        // String format with array config (shorthand format)
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styles: '.class { color: red; }'
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["array"])),
         ),
         // Template literal in single-element array
         (
@@ -377,6 +459,19 @@ fn test() {
             ",
             None,
         ),
+        // Template literal string with array config
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styles: `.class { color: red; }`
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["array"])),
+        ),
         // Single-element styleUrls with string config - should use styleUrl
         (
             r"
@@ -390,6 +485,19 @@ fn test() {
             ",
             None,
         ),
+        // Single-element styleUrls with explicit "string" config
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styleUrls: ['./test.component.css']
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["string"])),
+        ),
         // styleUrl with array config - should use styleUrls
         (
             r"
@@ -401,7 +509,33 @@ fn test() {
             })
             class TestComponent {}
             ",
-            Some(serde_json::json!([{ "format": "array" }])),
+            Some(serde_json::json!(["array"])),
+        ),
+        // styleUrl with template literal and array config
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styleUrl: `./test.component.css`
+            })
+            class TestComponent {}
+            ",
+            Some(serde_json::json!(["array"])),
+        ),
+        // styleUrls with single template literal - should use styleUrl
+        (
+            r"
+            import { Component } from '@angular/core';
+            @Component({
+                selector: 'app-test',
+                template: '',
+                styleUrls: [`./test.component.css`]
+            })
+            class TestComponent {}
+            ",
+            None,
         ),
     ];
 

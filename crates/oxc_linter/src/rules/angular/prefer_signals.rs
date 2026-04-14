@@ -8,7 +8,14 @@ use serde::Deserialize;
 use crate::{AstNode, context::LintContext, rule::Rule, utils::get_decorator_name};
 
 /// Known signal types that should be marked as readonly.
-const KNOWN_SIGNAL_TYPES: [&str; 4] = ["Signal", "InputSignal", "ModelSignal", "WritableSignal"];
+/// Matches ESLint's KNOWN_SIGNAL_TYPES from utils/signals.ts
+const KNOWN_SIGNAL_TYPES: [&str; 5] = [
+    "Signal",
+    "InputSignal",
+    "ModelSignal",
+    "WritableSignal",
+    "InputSignalWithTransform",
+];
 
 /// Known signal creation functions.
 const KNOWN_SIGNAL_CREATION_FUNCTIONS: [&str; 10] = [
@@ -145,8 +152,7 @@ declare_oxc_lint!(
     /// ```
     PreferSignals,
     angular,
-    pedantic,
-    pending // not yet ready for production
+    pedantic
 );
 
 impl Rule for PreferSignals {
