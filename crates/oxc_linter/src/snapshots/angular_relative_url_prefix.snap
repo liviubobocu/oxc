@@ -37,3 +37,21 @@ source: crates/oxc_linter/src/tester.rs
  7 │         })
    ╰────
   help: Use relative paths (starting with `./` or `../`) for `templateUrl` and `styleUrls` to ensure proper resolution in all build scenarios.
+
+  ⚠ angular(relative-url-prefix): `templateUrl` should use relative paths starting with `./` or `../`
+   ╭─[relative_url_prefix.tsx:4:26]
+ 3 │         @Component({
+ 4 │             templateUrl: `foobar.html`,
+   ·                          ─────────────
+ 5 │             styleUrls: [
+   ╰────
+  help: Use relative paths (starting with `./` or `../`) for `templateUrl` and `styleUrls` to ensure proper resolution in all build scenarios.
+
+  ⚠ angular(relative-url-prefix): `styleUrls` should use relative paths starting with `./` or `../`
+   ╭─[relative_url_prefix.tsx:6:17]
+ 5 │             styleUrls: [
+ 6 │                 `styles.css`,
+   ·                 ────────────
+ 7 │             ]
+   ╰────
+  help: Use relative paths (starting with `./` or `../`) for `templateUrl` and `styleUrls` to ensure proper resolution in all build scenarios.

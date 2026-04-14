@@ -25,6 +25,15 @@ fn pipe_prefix_diagnostic(span: Span, prefixes: &[String]) -> OxcDiagnostic {
         .with_label(span)
 }
 
+fn selector_after_prefix_diagnostic(span: Span, prefixes: &[String]) -> OxcDiagnostic {
+    let prefix_list = prefixes.join(", ");
+    OxcDiagnostic::warn(format!(
+        "Pipes should have a selector after the {prefix_list} prefix"
+    ))
+    .with_help("A pipe name cannot be just the prefix - add a descriptive name after the prefix.")
+    .with_label(span)
+}
+
 #[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct PipePrefixConfig {
@@ -157,19 +166,41 @@ impl Rule for PipePrefix {
         // Get the span for error reporting (use name value span, matching ESLint)
         let name_span = name_expr.span();
 
-        // Check if the pipe name starts with any of the configured prefixes
-        let has_valid_prefix = self.prefixes.iter().any(|prefix| {
+        // ESLint's pipe-prefix has two-step validation:
+        // 1. prefixValidator - checks if name starts with prefix followed by uppercase or nothing
+        // 2. selectorAfterPrefixValidator - checks if there's something after the prefix
+        //
+        // We need to check both to match ESLint's behavior
+
+        // First, check if the pipe name matches any prefix with proper casing
+        // (prefix followed by uppercase or nothing)
+        let prefix_check_result = self.prefixes.iter().find_map(|prefix| {
             if pipe_name.starts_with(prefix) {
-                // Ensure the prefix is followed by uppercase (camelCase convention)
                 let rest = &pipe_name[prefix.len()..];
-                rest.is_empty() || rest.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                // Check if rest is empty OR starts with uppercase (camelCase convention)
+                if rest.is_empty() || rest.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                    Some((true, rest.is_empty()))
+                } else {
+                    None
+                }
             } else {
-                false
+                None
             }
         });
 
-        if !has_valid_prefix {
-            ctx.diagnostic(pipe_prefix_diagnostic(name_span, &self.prefixes));
+        match prefix_check_result {
+            Some((_, rest_is_empty)) => {
+                // Prefix matches with proper casing, but check if there's something after
+                if rest_is_empty {
+                    // Report: pipe name is just the prefix with nothing after
+                    ctx.diagnostic(selector_after_prefix_diagnostic(name_span, &self.prefixes));
+                }
+                // If rest_is_empty is false, it's valid - do nothing
+            }
+            None => {
+                // No valid prefix found - report prefix error
+                ctx.diagnostic(pipe_prefix_diagnostic(name_span, &self.prefixes));
+            }
         }
     }
 }
@@ -304,6 +335,21 @@ fn test() {
             import { Pipe, PipeTransform } from '@angular/core';
             @Pipe({
                 name: `formatDate`
+            })
+            class FormatDatePipe implements PipeTransform {
+                transform(value: Date): string {
+                    return value.toISOString();
+                }
+            }
+            ",
+            Some(serde_json::json!([{ "prefixes": ["app"] }])),
+        ),
+        // Pipe name is just the prefix with nothing after (selectorAfterPrefixFailure)
+        (
+            r"
+            import { Pipe, PipeTransform } from '@angular/core';
+            @Pipe({
+                name: 'app'
             })
             class FormatDatePipe implements PipeTransform {
                 transform(value: Date): string {

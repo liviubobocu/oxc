@@ -1,7 +1,7 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
 use crate::{
     AstNode,
@@ -107,8 +107,8 @@ impl Rule for NoAsyncLifecycleMethod {
             return;
         }
 
-        // Report the diagnostic on the method
-        ctx.diagnostic(no_async_lifecycle_method_diagnostic(method.span, &method_name));
+        // Report the diagnostic on the method key (name identifier) to match ESLint behavior
+        ctx.diagnostic(no_async_lifecycle_method_diagnostic(method.key.span(), &method_name));
     }
 }
 

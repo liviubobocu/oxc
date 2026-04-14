@@ -1,13 +1,13 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
 use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{get_class_angular_decorator, get_lifecycle_method_order, is_lifecycle_method}
+    utils::{get_class_angular_decorator_lenient, get_lifecycle_method_order, is_lifecycle_method}
 };
 
 fn sort_lifecycle_methods_diagnostic(span: Span) -> OxcDiagnostic {
@@ -89,8 +89,8 @@ impl Rule for SortLifecycleMethods {
             return;
         };
 
-        // Check if the class has an Angular decorator
-        if get_class_angular_decorator(class, ctx).is_none() {
+        // Check if the class has an Angular decorator (lenient: name-based matching only)
+        if get_class_angular_decorator_lenient(class, ctx).is_none() {
             return;
         }
 
@@ -102,7 +102,8 @@ impl Rule for SortLifecycleMethods {
                 && let Some(name) = method.key.static_name()
                     && is_lifecycle_method(&name)
                         && let Some(order) = get_lifecycle_method_order(&name) {
-                            lifecycle_methods.push((order, name.to_string(), method.span));
+                            // Use method.key.span() to match ESLint's reporting on the method name
+                            lifecycle_methods.push((order, name.to_string(), method.key.span()));
                         }
         }
 

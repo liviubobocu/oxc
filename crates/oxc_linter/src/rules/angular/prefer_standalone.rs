@@ -1,7 +1,7 @@
-use oxc_ast::{AstKind, ast::Expression};
+use oxc_ast::{AstKind, ast::{Expression, ObjectExpression, ObjectPropertyKind, PropertyKey}};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 use serde::Deserialize;
 
 use crate::{
@@ -108,12 +108,12 @@ impl Rule for PreferStandalone {
             return;
         };
 
-        // Only check @Component and @Directive decorators
+        // Only check @Component, @Directive, and @Pipe decorators
         let Some(decorator_name) = get_decorator_name(decorator) else {
             return;
         };
 
-        if decorator_name != "Component" && decorator_name != "Directive" {
+        if decorator_name != "Component" && decorator_name != "Directive" && decorator_name != "Pipe" {
             return;
         }
         // Note: Match ESLint behavior - does not verify imports for exact parity
@@ -130,17 +130,56 @@ impl Rule for PreferStandalone {
 
         // Check the value
         if let Expression::BooleanLiteral(bool_lit) = standalone_value {
+            // Get the full property span (key + value) to match ESLint behavior
+            let span = find_property_span(metadata, "standalone").unwrap_or(bool_lit.span);
+
             if !bool_lit.value {
                 // standalone: false - this is an error
-                ctx.diagnostic(standalone_false_diagnostic(bool_lit.span));
+                ctx.diagnostic(standalone_false_diagnostic(span));
             } else if self.warn_on_redundant {
                 // standalone: true - this is redundant (optional warning)
-                ctx.diagnostic(standalone_redundant_diagnostic(bool_lit.span));
+                ctx.diagnostic(standalone_redundant_diagnostic(span));
             }
-        } else {
-            // Non-boolean value (e.g., a variable) - we can't statically analyze this
+        }
+        // Non-boolean value (e.g., a variable) - we can't statically analyze this
+    }
+}
+
+/// Find the span of a property in an object expression (includes key and value).
+fn find_property_span(obj: &ObjectExpression<'_>, key: &str) -> Option<Span> {
+    for property in &obj.properties {
+        if let ObjectPropertyKind::ObjectProperty(prop) = property {
+            let key_matches = match &prop.key {
+                // Standard identifier key: `standalone: false`
+                PropertyKey::StaticIdentifier(ident) => ident.name.as_str() == key,
+                // String literal key: `'standalone': false`
+                PropertyKey::StringLiteral(lit) => lit.value.as_str() == key,
+                _ => {
+                    // For computed keys, check the expression
+                    if prop.computed {
+                        match prop.key.as_expression() {
+                            // Computed string literal: `['standalone']: false`
+                            Some(Expression::StringLiteral(lit)) => lit.value.as_str() == key,
+                            // Computed template literal with no expressions: `` [`standalone`]: false ``
+                            Some(Expression::TemplateLiteral(tpl))
+                                if tpl.expressions.is_empty() =>
+                            {
+                                tpl.quasis.first().is_some_and(|q| q.value.raw.as_str() == key)
+                            }
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    }
+                }
+            };
+
+            if key_matches {
+                return Some(prop.span());
+            }
         }
     }
+    None
 }
 
 #[test]
@@ -172,28 +211,22 @@ fn test() {
         @Directive({ selector: '[appTest]', standalone: true })
         class TestDirective {}
         ",
-        // Non-Angular decorator (should not trigger)
-        r"
-        import { Component } from 'some-other-lib';
-        @Component({ selector: 'app-test', standalone: false })
-        class TestComponent {}
-        ",
-        // Directive from non-Angular library (should not trigger)
-        r"
-        import { Directive } from 'some-other-lib';
-        @Directive({ selector: '[appTest]', standalone: false })
-        class TestDirective {}
-        ",
         // Injectable (not Component/Directive)
         r"
         import { Injectable } from '@angular/core';
         @Injectable({ providedIn: 'root' })
         class TestService {}
         ",
-        // Pipe (not Component/Directive)
+        // Pipe with standalone: true (no warning by default)
         r"
         import { Pipe } from '@angular/core';
         @Pipe({ name: 'test', standalone: true })
+        class TestPipe {}
+        ",
+        // Pipe without standalone property (defaults to true in Angular 20)
+        r"
+        import { Pipe } from '@angular/core';
+        @Pipe({ name: 'test' })
         class TestPipe {}
         ",
         // Component with templateUrl and no standalone
@@ -254,6 +287,25 @@ fn test() {
             standalone: false
         })
         class HighlightDirective {}
+        ",
+        // standalone: false on Pipe
+        r"
+        import { Pipe } from '@angular/core';
+        @Pipe({
+            name: 'testPipe',
+            standalone: false
+        })
+        class TestPipe {}
+        ",
+        // standalone: false on Pipe with other metadata
+        r"
+        import { Pipe } from '@angular/core';
+        @Pipe({
+            name: 'testPipe',
+            pure: true,
+            standalone: false
+        })
+        class TestPipe {}
         ",
     ];
 

@@ -2,29 +2,38 @@
 source: crates/oxc_linter/src/tester.rs
 ---
 
-  ⚠ angular(use-component-view-encapsulation): Avoid using `ViewEncapsulation.None`
-   ╭─[use_component_view_encapsulation.tsx:6:13]
- 5 │             template: '',
- 6 │             encapsulation: ViewEncapsulation.None
-   ·             ─────────────────────────────────────
- 7 │         })
+  ⚠ angular(use-component-view-encapsulation): Using `ViewEncapsulation.None` makes your styles global, which may have an unintended effect
+   ╭─[use_component_view_encapsulation.tsx:3:42]
+ 2 │       @Component({
+ 3 │         encapsulation: ViewEncapsulation.None,
+   ·                                          ────
+ 4 │         selector: 'app-foo-bar',
    ╰────
-  help: Using `ViewEncapsulation.None` makes component styles global, which can lead to unintended style conflicts. Use `ViewEncapsulation.Emulated` (default) or `ViewEncapsulation.ShadowDom` instead.
+  help: Remove `ViewEncapsulation.None`
 
-  ⚠ angular(use-component-view-encapsulation): Avoid using `ViewEncapsulation.None`
-   ╭─[use_component_view_encapsulation.tsx:6:13]
- 5 │             template: '',
- 6 │             encapsulation: 2
-   ·             ────────────────
- 7 │         })
+  ⚠ angular(use-component-view-encapsulation): Using `ViewEncapsulation.None` makes your styles global, which may have an unintended effect
+   ╭─[use_component_view_encapsulation.tsx:7:44]
+ 6 │         selector: 'app-foo-bar',
+ 7 │         'encapsulation': ViewEncapsulation.None
+   ·                                            ────
+ 8 │       })
    ╰────
-  help: Using `ViewEncapsulation.None` makes component styles global, which can lead to unintended style conflicts. Use `ViewEncapsulation.Emulated` (default) or `ViewEncapsulation.ShadowDom` instead.
+  help: Remove `ViewEncapsulation.None`
 
-  ⚠ angular(use-component-view-encapsulation): Avoid using `ViewEncapsulation.None`
-   ╭─[use_component_view_encapsulation.tsx:7:13]
- 6 │             standalone: true,
- 7 │             encapsulation: ViewEncapsulation.None
-   ·             ─────────────────────────────────────
- 8 │         })
+  ⚠ angular(use-component-view-encapsulation): Using `ViewEncapsulation.None` makes your styles global, which may have an unintended effect
+   ╭─[use_component_view_encapsulation.tsx:7:46]
+ 6 │         selector: 'app-foo-bar',
+ 7 │         ['encapsulation']: ViewEncapsulation.None
+   ·                                              ────
+ 8 │       })
    ╰────
-  help: Using `ViewEncapsulation.None` makes component styles global, which can lead to unintended style conflicts. Use `ViewEncapsulation.Emulated` (default) or `ViewEncapsulation.ShadowDom` instead.
+  help: Remove `ViewEncapsulation.None`
+
+  ⚠ angular(use-component-view-encapsulation): Using `ViewEncapsulation.None` makes your styles global, which may have an unintended effect
+   ╭─[use_component_view_encapsulation.tsx:7:46]
+ 6 │         selector: 'app-foo-bar',
+ 7 │         [`encapsulation`]: ViewEncapsulation.None
+   ·                                              ────
+ 8 │       })
+   ╰────
+  help: Remove `ViewEncapsulation.None`

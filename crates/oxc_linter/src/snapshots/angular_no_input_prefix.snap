@@ -3,37 +3,145 @@ source: crates/oxc_linter/src/tester.rs
 ---
 
   ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
-   ╭─[no_input_prefix.tsx:8:17]
+   ╭─[no_input_prefix.tsx:8:26]
  7 │             class TestComponent {
  8 │                 @Input() onSelect: any;
-   ·                 ────────
+   ·                          ────────
  9 │             }
    ╰────
   help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
 
   ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
-   ╭─[no_input_prefix.tsx:8:17]
+   ╭─[no_input_prefix.tsx:8:24]
  7 │             class TestComponent {
  8 │                 @Input('onSelect') select: any;
-   ·                 ──────────────────
+   ·                        ──────────
  9 │             }
    ╰────
   help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
 
   ⚠ angular(no-input-prefix): Input should not be prefixed with `can`
-   ╭─[no_input_prefix.tsx:8:17]
+   ╭─[no_input_prefix.tsx:8:26]
  7 │             class TestComponent {
  8 │                 @Input() canEdit: boolean;
-   ·                 ────────
+   ·                          ───────
  9 │             }
    ╰────
   help: Rename the input to not start with `can`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
 
   ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
-   ╭─[no_input_prefix.tsx:7:17]
+   ╭─[no_input_prefix.tsx:7:26]
  6 │             class TestDirective {
  7 │                 @Input() onHover: any;
-   ·                 ────────
+   ·                          ───────
  8 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:3:26]
+ 2 │             @Component({
+ 3 │                 inputs: ['on']
+   ·                          ────
+ 4 │             })
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:37]
+ 3 │                 outputs: [onCredit],
+ 4 │                 'inputs': [onLevel, `test: on`, onFunction()],
+   ·                                     ──────────
+ 5 │             })
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:3:30]
+ 2 │             @Component({
+ 3 │                 ['inputs']: ['onTest: test', ...onArray],
+   ·                              ──────────────
+ 4 │             })
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:3:30]
+ 2 │             @Directive({
+ 3 │                 [`inputs`]: ['onTest: test', ...onArray],
+   ·                              ──────────────
+ 4 │             })
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:26]
+ 3 │             class Test {
+ 4 │                 @Input() on: EventEmitter<any> = new EventEmitter<{}>();
+   ·                          ──
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:40]
+ 3 │             class Test {
+ 4 │                 @Input() @Custom('on') 'onPrefix' = new EventEmitter<void>();
+   ·                                        ──────────
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:34]
+ 3 │             class Test {
+ 4 │                 @Custom() @Input(`on`) _on = getInput();
+   ·                                  ────
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:59]
+ 3 │             class Test {
+ 4 │                 @Custom() @Input({ required: true, alias: `on` }) _on = getInput();
+   ·                                                           ────
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:24]
+ 3 │             class Test {
+ 4 │                 @Input('onPrefix') _on = (this.subject$ as Subject<{on: boolean}>).pipe();
+   ·                        ──────────
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:33]
+ 3 │             class Test {
+ 4 │                 @Input({ alias: 'onPrefix', required: true }) _on = (this.subject$ as Subject<{on: boolean}>).pipe();
+   ·                                 ──────────
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:38]
+ 3 │             class Test {
+ 4 │                 @Input('setter') set 'on-setter'(_v: any) {}
+   ·                                      ───────────
+ 5 │             }
+   ╰────
+  help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.
+
+  ⚠ angular(no-input-prefix): Input should not be prefixed with `on`
+   ╭─[no_input_prefix.tsx:4:24]
+ 3 │             class Test {
+ 4 │                 @Input(`onSetter`) set setter(_v: any) {}
+   ·                        ──────────
+ 5 │             }
    ╰────
   help: Rename the input to not start with `on`. Inputs should use descriptive names without unnecessary prefixes that can make the code harder to read or inconsistent with other inputs.

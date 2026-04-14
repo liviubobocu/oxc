@@ -7,10 +7,7 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{
-        get_component_metadata, get_decorator_name,
-        get_metadata_property
-}
+    utils::{get_component_metadata, get_decorator_name, get_metadata_property},
 };
 
 fn relative_url_prefix_diagnostic(span: Span, property: &str) -> OxcDiagnostic {
@@ -87,44 +84,74 @@ impl Rule for RelativeUrlPrefix {
         if decorator_name != "Component" {
             return;
         }
-        // Note: Match ESLint behavior - does not verify imports for exact parity
+
+        // Note: ESLint's selector only matches decorator name, not import source
+        // (COMPONENT_CLASS_DECORATOR = 'ClassDeclaration > Decorator[expression.callee.name="Component"]')
+        // So we match this lenient behavior for exact parity
+
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
         };
 
         // Check templateUrl
-        if let Some(template_url) = get_metadata_property(metadata, "templateUrl")
-            && let Expression::StringLiteral(lit) = template_url
-                && !is_relative_path(lit.value.as_str()) {
-                    ctx.diagnostic(relative_url_prefix_diagnostic(lit.span, "templateUrl"));
-                }
-
-        // Check styleUrls (array of strings)
-        if let Some(style_urls) = get_metadata_property(metadata, "styleUrls")
-            && let Expression::ArrayExpression(arr) = style_urls {
-                for element in &arr.elements {
-                    // Check if the element is a string literal (either directly or through expression)
-                    let string_lit = match element {
-                        oxc_ast::ast::ArrayExpressionElement::StringLiteral(lit) => Some(lit),
-                        _ => element.as_expression().and_then(|e| {
-                            if let Expression::StringLiteral(lit) = e { Some(lit) } else { None }
-                        })
-};
-
-                    if let Some(lit) = string_lit
-                        && !is_relative_path(lit.value.as_str()) {
-                            ctx.diagnostic(relative_url_prefix_diagnostic(lit.span, "styleUrls"));
-                        }
+        // Latest ESLint supports template literals: https://github.com/angular-eslint/angular-eslint/issues/2575
+        if let Some(template_url) = get_metadata_property(metadata, "templateUrl") {
+            if let Some((path, span)) = extract_url_value(template_url) {
+                if !is_relative_path(&path) {
+                    ctx.diagnostic(relative_url_prefix_diagnostic(span, "templateUrl"));
                 }
             }
+        }
+
+        // Check styleUrls (array of strings)
+        // Latest ESLint supports template literals: https://github.com/angular-eslint/angular-eslint/issues/2575
+        if let Some(style_urls) = get_metadata_property(metadata, "styleUrls") {
+            if let Expression::ArrayExpression(arr) = style_urls {
+                for element in &arr.elements {
+                    if let Some(expr) = element.as_expression() {
+                        if let Some((path, span)) = extract_url_value(expr) {
+                            if !is_relative_path(&path) {
+                                ctx.diagnostic(relative_url_prefix_diagnostic(span, "styleUrls"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Check styleUrl (single string, Angular 17+)
-        if let Some(style_url) = get_metadata_property(metadata, "styleUrl")
-            && let Expression::StringLiteral(lit) = style_url
-                && !is_relative_path(lit.value.as_str()) {
-                    ctx.diagnostic(relative_url_prefix_diagnostic(lit.span, "styleUrl"));
+        // Latest ESLint supports template literals: https://github.com/angular-eslint/angular-eslint/issues/2575
+        if let Some(style_url) = get_metadata_property(metadata, "styleUrl") {
+            if let Some((path, span)) = extract_url_value(style_url) {
+                if !is_relative_path(&path) {
+                    ctx.diagnostic(relative_url_prefix_diagnostic(span, "styleUrl"));
                 }
+            }
+        }
+    }
+}
+
+/// Extract URL value from a string literal or template literal.
+/// Returns the path string and span, or None if the expression type is not supported.
+///
+/// Template literal support was added in angular-eslint PR #2576 (merged July 2025).
+/// See: https://github.com/angular-eslint/angular-eslint/issues/2575
+fn extract_url_value(expr: &Expression<'_>) -> Option<(String, Span)> {
+    match expr {
+        Expression::StringLiteral(lit) => Some((lit.value.to_string(), lit.span)),
+        Expression::TemplateLiteral(lit) => {
+            // Support simple template literals without expressions
+            // For template literals, use the raw value of the first quasi (matching ESLint)
+            if lit.quasis.len() == 1 && lit.expressions.is_empty() {
+                let quasi = &lit.quasis[0];
+                Some((quasi.value.raw.to_string(), lit.span))
+            } else {
+                // Template literal with expressions - can't validate statically
+                None
+            }
+        }
+        _ => None,
     }
 }
 
@@ -194,15 +221,20 @@ fn test() {
         })
         class TestComponent {}
         ",
-        // Non-Angular Component
+        // Template literals with valid relative paths (ESLint PR #2576)
+        // See: https://github.com/angular-eslint/angular-eslint/issues/2575
         r"
-        import { Component } from 'other-lib';
+        import { Component } from '@angular/core';
         @Component({
-            selector: 'app-test',
-            templateUrl: 'test.component.html'
+            templateUrl: `../foobar.html`,
+            styleUrls: [
+                `.././foobar.css`,
+            ]
         })
         class TestComponent {}
         ",
+        // Note: ESLint's selector only matches by decorator name, not import source
+        // So @Component from 'other-lib' is also matched. We match this behavior for parity.
     ];
 
     let fail = vec![
@@ -241,6 +273,17 @@ fn test() {
             selector: 'app-test',
             template: '',
             styleUrls: ['./valid.css', 'invalid.css']
+        })
+        class TestComponent {}
+        ",
+        // Template literals with INVALID paths (no relative prefix)
+        r"
+        import { Component } from '@angular/core';
+        @Component({
+            templateUrl: `foobar.html`,
+            styleUrls: [
+                `styles.css`,
+            ]
         })
         class TestComponent {}
         ",

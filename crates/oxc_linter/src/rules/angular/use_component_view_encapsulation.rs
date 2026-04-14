@@ -7,20 +7,15 @@ use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
-    utils::{
-        get_component_metadata, get_decorator_name,
-        get_metadata_property
-}
+    utils::{get_component_metadata, get_decorator_name, get_metadata_property},
 };
 
 fn use_component_view_encapsulation_diagnostic(span: Span) -> OxcDiagnostic {
-    OxcDiagnostic::warn("Avoid using `ViewEncapsulation.None`")
-        .with_help(
-            "Using `ViewEncapsulation.None` makes component styles global, which can lead to \
-            unintended style conflicts. Use `ViewEncapsulation.Emulated` (default) or \
-            `ViewEncapsulation.ShadowDom` instead.",
-        )
-        .with_label(span)
+    OxcDiagnostic::warn(
+        "Using `ViewEncapsulation.None` makes your styles global, which may have an unintended effect",
+    )
+    .with_help("Remove `ViewEncapsulation.None`")
+    .with_label(span)
 }
 
 #[derive(Debug, Default, Clone)]
@@ -87,7 +82,7 @@ impl Rule for UseComponentViewEncapsulation {
             return;
         };
 
-        // Only check @Component decorator
+        // Only check @Component decorator (by name only, matching ESLint behavior)
         let Some(decorator_name) = get_decorator_name(decorator) else {
             return;
         };
@@ -95,56 +90,39 @@ impl Rule for UseComponentViewEncapsulation {
         if decorator_name != "Component" {
             return;
         }
-        // Note: Match ESLint behavior - does not verify imports for exact parity
+
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
         };
 
         // Check if encapsulation is set to ViewEncapsulation.None
+        // get_metadata_property supports all key types (identifier, string, computed)
         let Some(encapsulation) = get_metadata_property(metadata, "encapsulation") else {
             return;
         };
 
-        if is_view_encapsulation_none(encapsulation) {
-            let span = find_property_span(metadata, "encapsulation").unwrap_or(decorator.span);
-            ctx.diagnostic(use_component_view_encapsulation_diagnostic(span));
+        // Only report on ViewEncapsulation.None member expression, not numeric literals
+        // ESLint specifically matches: MemberExpression[object.name='ViewEncapsulation'] > Identifier[name='None']
+        if let Some(none_span) = get_view_encapsulation_none_span(encapsulation) {
+            ctx.diagnostic(use_component_view_encapsulation_diagnostic(none_span));
         }
     }
 }
 
-fn is_view_encapsulation_none(expr: &Expression<'_>) -> bool {
-    match expr {
-        // ViewEncapsulation.None
-        Expression::StaticMemberExpression(member) => {
-            if let Expression::Identifier(obj) = &member.object {
-                obj.name.as_str() == "ViewEncapsulation" && member.property.name.as_str() == "None"
-            } else {
-                false
+/// Check if the expression is `ViewEncapsulation.None` and return the span of the `None` identifier.
+/// Returns None if it's not a ViewEncapsulation.None expression.
+/// ESLint reports only on the `None` identifier, not the entire `ViewEncapsulation.None` expression.
+fn get_view_encapsulation_none_span(expr: &Expression<'_>) -> Option<Span> {
+    // Only match ViewEncapsulation.None member expression
+    // ESLint selector: MemberExpression[object.name='ViewEncapsulation'] > Identifier[name='None']
+    if let Expression::StaticMemberExpression(member) = expr {
+        if let Expression::Identifier(obj) = &member.object {
+            if obj.name.as_str() == "ViewEncapsulation" && member.property.name.as_str() == "None" {
+                // Return the span of just the "None" identifier to match ESLint
+                return Some(member.property.span);
             }
         }
-        // Numeric literal 2 (ViewEncapsulation.None = 2)
-        Expression::NumericLiteral(lit) => {
-            #[expect(clippy::float_cmp)]
-            {
-                lit.value == 2.0
-            }
-        }
-        _ => false
-}
-}
-
-fn find_property_span(obj: &oxc_ast::ast::ObjectExpression<'_>, key: &str) -> Option<Span> {
-    use oxc_ast::ast::{ObjectPropertyKind, PropertyKey};
-    use oxc_span::GetSpan;
-
-    for property in &obj.properties {
-        if let ObjectPropertyKind::ObjectProperty(prop) = property
-            && let PropertyKey::StaticIdentifier(ident) = &prop.key
-                && ident.name.as_str() == key {
-                    // Return the value span (matching ESLint behavior)
-                    return Some(prop.value.span());
-                }
     }
     None
 }
@@ -154,79 +132,133 @@ fn test() {
     use crate::tester::Tester;
 
     let pass = vec![
-        // Default encapsulation (Emulated)
+        // Emulated encapsulation
         r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: ''
-        })
-        class TestComponent {}
-        ",
-        // Explicit Emulated encapsulation
+    @Component({
+      encapsulation: ViewEncapsulation.Emulated,
+      selector: 'app-foo-bar'
+    })
+    class Test {}
+  ",
+        // Native encapsulation (string literal key)
         r"
-        import { Component, ViewEncapsulation } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            encapsulation: ViewEncapsulation.Emulated
-        })
-        class TestComponent {}
-        ",
-        // ShadowDom encapsulation
+    @Component({
+      'encapsulation': ViewEncapsulation.Native,
+      selector: 'app-foo-bar',
+    })
+    class Test {}
+  ",
+        // ShadowDom encapsulation (computed string literal key)
         r"
-        import { Component, ViewEncapsulation } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            encapsulation: ViewEncapsulation.ShadowDom
-        })
-        class TestComponent {}
-        ",
-        // Non-Angular Component
+    @Component({
+      ['encapsulation']: ViewEncapsulation.ShadowDom,
+    })
+    class Test {}
+  ",
+        // Computed template literal key with function call value (not ViewEncapsulation.None)
         r"
-        import { Component, ViewEncapsulation } from 'other-lib';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            encapsulation: ViewEncapsulation.None
-        })
-        class TestComponent {}
-        ",
+    function encapsulation() {
+      return ViewEncapsulation.None;
+    }
+
+    @Component({
+      [`encapsulation`]: encapsulation()
+    })
+    class Test {}
+  ",
+        // Computed identifier key (different variable)
+        r"
+    const encapsulation = 'templateUrl';
+    @Component({
+      [encapsulation]: '../a.html'
+    })
+    class Test {}
+  ",
+        // Shorthand property (value is variable reference, not ViewEncapsulation.None)
+        r"
+    const encapsulation = 'templateUrl';
+    @Component({
+      encapsulation
+    })
+    class Test {}
+  ",
+        // Variable reference value
+        r"
+    const test = 'test';
+    @Component({
+      encapsulation: test,
+    })
+    class Test {}
+  ",
+        // Undefined value
+        r"
+    @Component({
+      encapsulation: undefined,
+    })
+    class Test {}
+  ",
+        // Empty component
+        r"
+    @Component({})
+    class Test {}
+  ",
+        // Variable as decorator argument
+        r"
+    const options = {};
+    @Component(options)
+    class Test {}
+  ",
+        // NgModule (not Component)
+        r"
+    @NgModule({
+      bootstrap: [Foo]
+    })
+    class Test {}
+  ",
     ];
 
     let fail = vec![
-        // ViewEncapsulation.None
+        // Standard identifier key with ViewEncapsulation.None
         r"
-        import { Component, ViewEncapsulation } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            encapsulation: ViewEncapsulation.None
-        })
-        class TestComponent {}
-        ",
-        // Numeric value 2 (None)
+      @Component({
+        encapsulation: ViewEncapsulation.None,
+        selector: 'app-foo-bar',
+      })
+      class Test {}
+    ",
+        // String literal key with ViewEncapsulation.None
         r"
-        import { Component } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            encapsulation: 2
-        })
-        class TestComponent {}
-        ",
-        // Standalone component with None
+      import type { ViewEncapsulation } from '@angular/core';
+      import { HttpClient } from '@angular/common/http';
+
+      @Component({
+        selector: 'app-foo-bar',
+        'encapsulation': ViewEncapsulation.None
+      })
+      class Test {}
+    ",
+        // Computed string literal key with ViewEncapsulation.None
         r"
-        import { Component, ViewEncapsulation } from '@angular/core';
-        @Component({
-            selector: 'app-test',
-            template: '',
-            standalone: true,
-            encapsulation: ViewEncapsulation.None
-        })
-        class TestComponent {}
-        ",
+      import { ViewEncapsulation } from '@angular/core';
+      import { HttpClient } from '@angular/common/http';
+
+      @Component({
+        selector: 'app-foo-bar',
+        ['encapsulation']: ViewEncapsulation.None
+      })
+      class Test {}
+    ",
+        // Computed template literal key with ViewEncapsulation.None
+        r"
+      import { ViewEncapsulation } from '@angular/core';
+      import { HttpClient } from '@angular/common/http';
+
+      @Component({
+        selector: 'app-foo-bar',
+        [`encapsulation`]: ViewEncapsulation.None
+      })
+      class Test {}
+    ",
     ];
 
     Tester::new(
