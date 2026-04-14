@@ -7,7 +7,7 @@ use serde::Deserialize;
 use crate::{
     AstNode,
     context::LintContext,
-    rule::Rule,
+    rule::{DefaultRuleConfig, Rule},
     utils::{
         get_component_metadata, get_decorator_name
 }
@@ -24,7 +24,7 @@ fn sort_keys_diagnostic(span: Span, decorator: &str, expected_order: &str) -> Ox
     .with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase", default, deny_unknown_fields)]
 pub struct SortKeysInTypeDecoratorConfig {
     #[serde(default = "default_component_order")]
@@ -35,6 +35,17 @@ pub struct SortKeysInTypeDecoratorConfig {
     ng_module: Vec<String>,
     #[serde(default = "default_pipe_order")]
     pipe: Vec<String>
+}
+
+impl Default for SortKeysInTypeDecoratorConfig {
+    fn default() -> Self {
+        Self {
+            component: default_component_order(),
+            directive: default_directive_order(),
+            ng_module: default_ng_module_order(),
+            pipe: default_pipe_order(),
+        }
+    }
 }
 
 fn default_component_order() -> Vec<String> {
@@ -182,12 +193,10 @@ declare_oxc_lint!(
 
 impl Rule for SortKeysInTypeDecorator {
     fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::Error> {
-        if value.is_null() {
-            return Ok(Self::from(SortKeysInTypeDecoratorConfig::default()));
-        }
-        let config_value = value.get(0).unwrap_or(&value);
-        serde_json::from_value::<SortKeysInTypeDecoratorConfig>(config_value.clone())
-            .map(Into::into)
+        let config =
+            serde_json::from_value::<DefaultRuleConfig<SortKeysInTypeDecoratorConfig>>(value)
+                .map(DefaultRuleConfig::into_inner)?;
+        Ok(Self::from(config))
     }
 
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
@@ -252,12 +261,13 @@ impl Rule for SortKeysInTypeDecorator {
 
         for (i, name) in configured_props.iter().enumerate() {
             if i < expected_configured_props.len() && *name != expected_configured_props[i] {
-                // Find the span of the out-of-order property
+                // Find the span of the out-of-order property (entire property, not just key)
                 for prop in &metadata.properties {
                     if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(obj_prop) = prop
                         && let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) = &obj_prop.key
                             && ident.name.as_str() == *name {
-                                out_of_order_span = Some(obj_prop.key.span());
+                                // ESLint reports on the entire property span (key + value)
+                                out_of_order_span = Some(obj_prop.span());
                                 break;
                             }
                 }
@@ -266,23 +276,25 @@ impl Rule for SortKeysInTypeDecorator {
         }
 
         // Also check for unconfigured props that come before configured props
+        // ESLint checks if the FIRST unconfigured property appears before the FIRST configured property
         if out_of_order_span.is_none() {
             let first_configured_idx =
                 property_names.iter().position(|name| expected_order.iter().any(|e| e == *name));
-            let last_unconfigured_idx =
-                property_names.iter().rposition(|name| !expected_order.iter().any(|e| e == *name));
+            let first_unconfigured_idx =
+                property_names.iter().position(|name| !expected_order.iter().any(|e| e == *name));
 
-            if let (Some(first_cfg), Some(last_uncfg)) =
-                (first_configured_idx, last_unconfigured_idx)
-                && last_uncfg < first_cfg {
-                    // Unconfigured property comes before configured - find its span
-                    let uncfg_name = property_names[last_uncfg];
+            if let (Some(first_cfg), Some(first_uncfg)) =
+                (first_configured_idx, first_unconfigured_idx)
+                && first_uncfg < first_cfg {
+                    // First unconfigured property comes before first configured - find its span
+                    let uncfg_name = property_names[first_uncfg];
                     for prop in &metadata.properties {
                         if let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(obj_prop) = prop
                             && let oxc_ast::ast::PropertyKey::StaticIdentifier(ident) =
                                 &obj_prop.key
                                 && ident.name.as_str() == uncfg_name {
-                                    out_of_order_span = Some(obj_prop.key.span());
+                                    // ESLint reports on the entire property span (key + value)
+                                    out_of_order_span = Some(obj_prop.span());
                                     break;
                                 }
                     }
@@ -355,13 +367,9 @@ fn test() {
         })
         class TestComponent {}
         ",
-        // Non-Angular decorator
+        // Empty object (no order needed)
         r"
-        import { Component } from 'other-lib';
-        @Component({
-            template: '',
-            selector: 'app-test'
-        })
+        @Component({})
         class TestComponent {}
         ",
     ];

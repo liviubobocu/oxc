@@ -1,36 +1,113 @@
 use oxc_ast::AstKind;
+use oxc_ast::ast::{Expression, PropertyDefinition, TSType, TSTypeName};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
+use serde::Deserialize;
 
-use crate::{
-    AstNode,
-    context::LintContext,
-    rule::Rule,
-    utils::{
-        get_decorator_name, get_signal_replacement, is_legacy_angular_decorator
+use crate::{AstNode, context::LintContext, rule::Rule, utils::get_decorator_name};
+
+/// Known signal types that should be marked as readonly.
+const KNOWN_SIGNAL_TYPES: [&str; 4] = ["Signal", "InputSignal", "ModelSignal", "WritableSignal"];
+
+/// Known signal creation functions.
+const KNOWN_SIGNAL_CREATION_FUNCTIONS: [&str; 10] = [
+    "computed",
+    "contentChild",
+    "contentChildren",
+    "input",
+    "linkedSignal",
+    "model",
+    "signal",
+    "toSignal",
+    "viewChild",
+    "viewChildren",
+];
+
+/// Query decorators that should be replaced with signal functions.
+const QUERY_DECORATORS: [(&str, &str); 4] = [
+    ("ViewChild", "viewChild"),
+    ("ViewChildren", "viewChildren"),
+    ("ContentChild", "contentChild"),
+    ("ContentChildren", "contentChildren"),
+];
+
+fn prefer_readonly_signal_properties_diagnostic(span: Span) -> OxcDiagnostic {
+    OxcDiagnostic::warn(
+        "Properties declared using signals should be marked as `readonly` since they should not be reassigned",
+    )
+    .with_label(span)
 }
-};
 
-fn prefer_signals_diagnostic(span: Span, decorator_name: &str, replacement: &str) -> OxcDiagnostic {
+fn prefer_input_signals_diagnostic(span: Span) -> OxcDiagnostic {
+    OxcDiagnostic::warn(
+        "Use `InputSignal`s (e.g. via `input()`) for Component input properties rather than the legacy `@Input()` decorator",
+    )
+    .with_label(span)
+}
+
+fn prefer_query_signals_diagnostic(
+    span: Span,
+    function_name: &str,
+    decorator_name: &str,
+) -> OxcDiagnostic {
     OxcDiagnostic::warn(format!(
-        "Prefer signal-based `{replacement}()` over legacy `@{decorator_name}()` decorator"
-    ))
-    .with_help(format!(
-        "Replace `@{decorator_name}()` with `{replacement}()` for better performance and reactivity. \
-        See https://angular.dev/guide/signals for migration guidance."
+        "Use the `{function_name}` function instead of the `{decorator_name}` decorator"
     ))
     .with_label(span)
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct PreferSignals;
+#[derive(Debug, Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreferSignalsConfig {
+    /// Whether to check that signal properties are marked as readonly. Default: true.
+    #[serde(default = "default_true")]
+    pub prefer_readonly_signal_properties: bool,
+
+    /// Whether to prefer input() over @Input(). Default: true.
+    #[serde(default = "default_true")]
+    pub prefer_input_signals: bool,
+
+    /// Whether to prefer viewChild/contentChild over @ViewChild/@ContentChild. Default: true.
+    #[serde(default = "default_true")]
+    pub prefer_query_signals: bool,
+
+    /// Whether to use type checking to infer signal types. Default: false.
+    /// Note: This option is currently not fully supported in oxlint as it requires
+    /// TypeScript's type checker. Currently only syntactic analysis is performed.
+    #[serde(default)]
+    pub use_type_checking: bool,
+
+    /// Additional function names that create signals. Default: [].
+    #[serde(default)]
+    pub additional_signal_creation_functions: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone)]
+pub struct PreferSignals(Box<PreferSignalsConfig>);
+
+impl Default for PreferSignals {
+    fn default() -> Self {
+        Self(Box::new(PreferSignalsConfig {
+            prefer_readonly_signal_properties: true,
+            prefer_input_signals: true,
+            prefer_query_signals: true,
+            use_type_checking: false,
+            additional_signal_creation_functions: Vec::new(),
+        }))
+    }
+}
 
 declare_oxc_lint!(
     /// ### What it does
     ///
     /// Enforces the use of Angular signal-based APIs (`input()`, `output()`, `viewChild()`, etc.)
-    /// over legacy decorators (`@Input()`, `@Output()`, `@ViewChild()`, etc.).
+    /// over legacy decorators (`@Input()`, `@Output()`, `@ViewChild()`, etc.) and ensures that
+    /// signal properties are marked as `readonly`.
     ///
     /// ### Why is this bad?
     ///
@@ -38,34 +115,32 @@ declare_oxc_lint!(
     /// component tree for changes. Signal-based APIs provide fine-grained reactivity where only
     /// affected parts of the UI are updated, resulting in better performance.
     ///
-    /// Additionally, signals are the future of Angular reactivity and provide better TypeScript
-    /// type inference, making code more maintainable.
+    /// Signal properties should be marked as `readonly` because signals themselves are stable
+    /// references - you read their value by calling them, you don't reassign the signal.
     ///
     /// ### Examples
     ///
     /// Examples of **incorrect** code for this rule:
     /// ```typescript
-    /// import { Component, Input, Output, EventEmitter, ViewChild } from '@angular/core';
+    /// import { Component, Input, ViewChild, signal } from '@angular/core';
     ///
     /// @Component({ selector: 'app-example', template: '' })
     /// export class ExampleComponent {
-    ///   @Input() name: string;
-    ///   @Input({ required: true }) id: number;
-    ///   @Output() nameChange = new EventEmitter<string>();
-    ///   @ViewChild('container') container: ElementRef;
+    ///   @Input() name: string;              // Should use input()
+    ///   @ViewChild('container') container;  // Should use viewChild()
+    ///   testSignal = signal(42);            // Should be readonly
     /// }
     /// ```
     ///
     /// Examples of **correct** code for this rule:
     /// ```typescript
-    /// import { Component, input, output, viewChild, ElementRef } from '@angular/core';
+    /// import { Component, input, viewChild, signal } from '@angular/core';
     ///
     /// @Component({ selector: 'app-example', template: '' })
     /// export class ExampleComponent {
-    ///   name = input<string>();
-    ///   id = input.required<number>();
-    ///   nameChange = output<string>();
-    ///   container = viewChild<ElementRef>('container');
+    ///   readonly name = input<string>();
+    ///   readonly container = viewChild<ElementRef>('container');
+    ///   readonly testSignal = signal(42);
     /// }
     /// ```
     PreferSignals,
@@ -75,31 +150,133 @@ declare_oxc_lint!(
 );
 
 impl Rule for PreferSignals {
+    fn from_configuration(value: serde_json::Value) -> Result<Self, serde_json::Error> {
+        let config = value
+            .get(0)
+            .map(|v| serde_json::from_value::<PreferSignalsConfig>(v.clone()))
+            .transpose()?
+            .unwrap_or_default();
+        Ok(Self(Box::new(config)))
+    }
+
     fn run<'a>(&self, node: &AstNode<'a>, ctx: &LintContext<'a>) {
-        // We're looking for decorators on class properties
-        let AstKind::Decorator(decorator) = node.kind() else {
-            return;
-        };
+        match node.kind() {
+            // Check for non-readonly signal properties
+            AstKind::PropertyDefinition(prop_def) => {
+                if self.0.prefer_readonly_signal_properties {
+                    self.check_readonly_signal_property(prop_def, ctx);
+                }
+            }
+            // Check for legacy decorators
+            AstKind::Decorator(decorator) => {
+                let Some(decorator_name) = get_decorator_name(decorator) else {
+                    return;
+                };
 
-        // Get the decorator name (e.g., "Input", "Output", "ViewChild")
-        let Some(decorator_name) = get_decorator_name(decorator) else {
-            return;
-        };
+                // Check @Input() decorator
+                if self.0.prefer_input_signals && decorator_name == "Input" {
+                    ctx.diagnostic(prefer_input_signals_diagnostic(decorator.span));
+                    return;
+                }
 
-        // Check if it's a legacy Angular decorator we care about
-        if !is_legacy_angular_decorator(decorator_name) {
+                // Check query decorators (@ViewChild, @ViewChildren, @ContentChild, @ContentChildren)
+                if self.0.prefer_query_signals {
+                    if let Some((_, function_name)) =
+                        QUERY_DECORATORS.iter().find(|(dec, _)| *dec == decorator_name)
+                    {
+                        ctx.diagnostic(prefer_query_signals_diagnostic(
+                            decorator.span,
+                            function_name,
+                            decorator_name,
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl PreferSignals {
+    /// Check if a property definition should be marked as readonly because it's a signal.
+    fn check_readonly_signal_property(&self, prop_def: &PropertyDefinition<'_>, ctx: &LintContext<'_>) {
+        // Skip if already readonly
+        if prop_def.readonly {
             return;
         }
 
-        // Get the identifier to check import source
-        // Note: Match ESLint behavior - does not verify imports for exact parity
+        let mut should_be_readonly = false;
 
-        // Get the signal-based replacement
-        let Some(replacement) = get_signal_replacement(decorator_name) else {
-            return;
+        // Check 1: Type annotation indicates a signal type
+        if let Some(type_annotation) = &prop_def.type_annotation {
+            if let TSType::TSTypeReference(type_ref) = &type_annotation.type_annotation {
+                // Check if it has type arguments (Signal<T>, InputSignal<T>, etc.)
+                if type_ref.type_arguments.is_some() {
+                    if let TSTypeName::IdentifierReference(ident) = &type_ref.type_name {
+                        if KNOWN_SIGNAL_TYPES.contains(&ident.name.as_str()) {
+                            should_be_readonly = true;
+                        }
+                    }
+                }
+            }
+        } else if let Some(value) = &prop_def.value {
+            // Check 2: Value is a call to a signal creation function
+            should_be_readonly = self.is_signal_creation_call(value);
+        }
+
+        if should_be_readonly {
+            // Report on the property key (name), not the entire property definition
+            let key_span = prop_def.key.span();
+            ctx.diagnostic(prefer_readonly_signal_properties_diagnostic(key_span));
+        }
+    }
+
+    /// Check if an expression is a call to a signal creation function.
+    fn is_signal_creation_call(&self, expr: &Expression<'_>) -> bool {
+        let Expression::CallExpression(call_expr) = expr else {
+            return false;
         };
 
-        ctx.diagnostic(prefer_signals_diagnostic(decorator.span, decorator_name, replacement));
+        // Handle .asReadonly() calls: signal(42).asReadonly()
+        // We need to check the object being called
+        if let Expression::StaticMemberExpression(member_expr) = &call_expr.callee {
+            if member_expr.property.name.as_str() == "asReadonly" {
+                // Check if the object is a signal creation call
+                if let Expression::CallExpression(inner_call) = &member_expr.object {
+                    return self.is_signal_creation_callee(&inner_call.callee);
+                }
+            }
+        }
+
+        self.is_signal_creation_callee(&call_expr.callee)
+    }
+
+    /// Check if a callee expression is a signal creation function or method.
+    fn is_signal_creation_callee(&self, callee: &Expression<'_>) -> bool {
+        match callee {
+            // Direct call: signal(), computed(), input(), etc.
+            Expression::Identifier(ident) => {
+                let name = ident.name.as_str();
+                KNOWN_SIGNAL_CREATION_FUNCTIONS.contains(&name)
+                    || self.0.additional_signal_creation_functions.iter().any(|f| f == name)
+            }
+            // Method call: input.required(), model.required(), viewChild.required(), etc.
+            Expression::StaticMemberExpression(member_expr) => {
+                // Only handle .required() method
+                if member_expr.property.name.as_str() != "required" {
+                    return false;
+                }
+                // Check if the object is a known signal creation function
+                if let Expression::Identifier(ident) = &member_expr.object {
+                    let name = ident.name.as_str();
+                    KNOWN_SIGNAL_CREATION_FUNCTIONS.contains(&name)
+                        || self.0.additional_signal_creation_functions.iter().any(|f| f == name)
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
     }
 }
 
@@ -108,154 +285,399 @@ fn test() {
     use crate::tester::Tester;
 
     let pass = vec![
-        // Signal-based input
+        // Non-signal class properties
         r"
-        import { Component, input } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            name = input<string>();
+        class Test {
+            testSubject = new Subject();
         }
         ",
-        // Signal-based required input
         r"
-        import { Component, input } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            id = input.required<number>();
+        class Test {
+            testSubject = new ReplaySubject(1);
         }
         ",
-        // Signal-based output
         r"
-        import { Component, output } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            clicked = output<void>();
+        class Test {
+            testValue = test();
         }
         ",
-        // Signal-based viewChild
         r"
-        import { Component, viewChild, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            container = viewChild<ElementRef>('container');
+        class Test {
+            testValue: number;
         }
         ",
-        // Signal-based viewChildren
         r"
-        import { Component, viewChildren, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            items = viewChildren<ElementRef>('item');
+        class Test {
+            testValue: Widget<number>;
         }
         ",
-        // Signal-based contentChild
+        // Readonly signal type annotations (correct)
         r"
-        import { Component, contentChild, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            content = contentChild<ElementRef>('content');
+        class Test {
+            readonly testSignal: Signal<number>;
         }
         ",
-        // Signal-based contentChildren
         r"
-        import { Component, contentChildren, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            items = contentChildren<ElementRef>('item');
+        class Test {
+            readonly testSignal: InputSignal<number>;
         }
         ",
-        // Input from a different library (should not trigger)
         r"
-        import { Input } from 'some-other-lib';
-        class TestComponent {
-            @Input() name: string;
+        class Test {
+            readonly testSignal: ModelSignal<number>;
         }
         ",
-        // Output from a different library (should not trigger)
         r"
-        import { Output } from 'some-other-lib';
-        class TestComponent {
-            @Output() clicked = {};
+        class Test {
+            readonly testSignal: WritableSignal<number>;
         }
         ",
-        // Component decorator is fine
+        // Readonly signal creation functions (correct)
         r"
-        import { Component } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {}
+        class Test {
+            readonly testSignal = computed(() => 0);
+        }
         ",
-        // Injectable decorator is fine
         r"
-        import { Injectable } from '@angular/core';
-        @Injectable({ providedIn: 'root' })
-        class TestService {}
+        class Test {
+            readonly testSignal = linkedSignal(() => source);
+        }
         ",
-        // Pipe decorator is fine
         r"
-        import { Pipe } from '@angular/core';
-        @Pipe({ name: 'test' })
-        class TestPipe {}
+        class Test {
+            readonly testSignal = contentChild('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = contentChild.required('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = contentChildren('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = input('');
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = input.required();
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = model();
+            readonly testRequired = model.required(42);
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = signal(true);
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = signal(true).asReadonly();
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = toSignal(source);
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = viewChild('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = viewChild.required('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly testSignal = viewChildren('test');
+        }
+        ",
+        // Unknown function - doesn't require readonly
+        r"
+        class Test {
+            testSignal = createSignal('test');
+        }
+        ",
+        // readonly input (correct for preferInputSignals)
+        r"
+        class Test {
+            readonly value = input();
+        }
+        ",
+        // readonly viewChild (correct for preferQuerySignals)
+        r"
+        class Test {
+            readonly query = viewChild('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly query = viewChildren('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly query = contentChild('test');
+        }
+        ",
+        r"
+        class Test {
+            readonly query = contentChildren('test');
+        }
         ",
     ];
 
     let fail = vec![
-        // Legacy @Input decorator
+        // Non-readonly Signal type (should be readonly)
         r"
-        import { Component, Input } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @Input() name: string;
+        class Test {
+            testSignal: Signal<number>;
         }
         ",
-        // Legacy @Input with options
+        // Non-readonly InputSignal type
         r"
-        import { Component, Input } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @Input({ required: true }) id: number;
+        class Test {
+            testSignal: InputSignal<number>;
         }
         ",
-        // Legacy @Output decorator
+        // Non-readonly ModelSignal type
         r"
-        import { Component, Output, EventEmitter } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @Output() clicked = new EventEmitter<void>();
+        class Test {
+            testSignal: ModelSignal<number>;
         }
         ",
-        // Legacy @ViewChild decorator
+        // Non-readonly WritableSignal type
         r"
-        import { Component, ViewChild, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @ViewChild('container') container: ElementRef;
+        class Test {
+            testSignal: WritableSignal<number>;
         }
         ",
-        // Legacy @ViewChildren decorator
+        // Non-readonly computed() call
         r"
-        import { Component, ViewChildren, QueryList, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @ViewChildren('item') items: QueryList<ElementRef>;
+        class Test {
+            testSignal = computed(() => 0);
         }
         ",
-        // Legacy @ContentChild decorator
+        // Non-readonly linkedSignal() call
         r"
-        import { Component, ContentChild, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @ContentChild('content') content: ElementRef;
+        class Test {
+            testSignal = linkedSignal(() => source);
         }
         ",
-        // Legacy @ContentChildren decorator
+        // Non-readonly contentChild() call
         r"
-        import { Component, ContentChildren, QueryList, ElementRef } from '@angular/core';
-        @Component({ selector: 'app-test', template: '' })
-        class TestComponent {
-            @ContentChildren('item') items: QueryList<ElementRef>;
+        class Test {
+            testSignal = contentChild('test');
+        }
+        ",
+        // Non-readonly contentChild.required() call
+        r"
+        class Test {
+            testSignal = contentChild.required('test');
+        }
+        ",
+        // Non-readonly contentChildren() call
+        r"
+        class Test {
+            testSignal = contentChildren('test');
+        }
+        ",
+        // Non-readonly input() call
+        r"
+        class Test {
+            testSignal = input('');
+        }
+        ",
+        // Non-readonly input.required() call
+        r"
+        class Test {
+            testSignal = input.required('');
+        }
+        ",
+        // Non-readonly model() call
+        r"
+        class Test {
+            testSignal = model(42);
+        }
+        ",
+        // Non-readonly model.required() call
+        r"
+        class Test {
+            testSignal = model.required();
+        }
+        ",
+        // Non-readonly signal() call
+        r"
+        class Test {
+            testSignal = signal(42);
+        }
+        ",
+        // Non-readonly signal().asReadonly() call
+        r"
+        class Test {
+            testSignal = signal(42).asReadonly();
+        }
+        ",
+        // Non-readonly toSignal() call
+        r"
+        class Test {
+            testSignal = toSignal(source);
+        }
+        ",
+        // Non-readonly viewChild() call
+        r"
+        class Test {
+            testSignal = viewChild('test');
+        }
+        ",
+        // Non-readonly viewChild.required() call
+        r"
+        class Test {
+            testSignal = viewChild.required('test');
+        }
+        ",
+        // Non-readonly viewChildren() call
+        r"
+        class Test {
+            testSignal = viewChildren('test');
+        }
+        ",
+        // Legacy @Input() decorator
+        r"
+        class Test {
+            @Input()
+            value = 1;
+        }
+        ",
+        // Legacy @ViewChild() decorator
+        r"
+        class Test {
+            @ViewChild('test')
+            value: Widget;
+        }
+        ",
+        // Legacy @ViewChildren() decorator
+        r"
+        class Test {
+            @ViewChildren('test')
+            value: QueryList<Widget>;
+        }
+        ",
+        // Legacy @ContentChild() decorator
+        r"
+        class Test {
+            @ContentChild('test')
+            value: Widget;
+        }
+        ",
+        // Legacy @ContentChildren() decorator
+        r"
+        class Test {
+            @ContentChildren('test')
+            value: QueryList<Widget>;
         }
         ",
     ];
 
     Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass, fail).test_and_snapshot();
+}
+
+#[test]
+fn test_with_options() {
+    use crate::tester::Tester;
+
+    // Test with preferReadonlySignalProperties: false
+    let pass_no_readonly = vec![(
+        r"
+        class Test {
+            testSignal = signal('test');
+        }
+        ",
+        Some(serde_json::json!([{ "preferReadonlySignalProperties": false }])),
+    )];
+
+    // Test with preferInputSignals: false
+    let pass_no_input_signals = vec![(
+        r"
+        class Test {
+            @Input()
+            readonly value = 1;
+        }
+        ",
+        Some(serde_json::json!([{ "preferInputSignals": false }])),
+    )];
+
+    // Test with preferQuerySignals: false
+    let pass_no_query_signals = vec![
+        (
+            r"
+            class Test {
+                @ViewChild('test')
+                value: Widget;
+            }
+            ",
+            Some(serde_json::json!([{ "preferQuerySignals": false }])),
+        ),
+        (
+            r"
+            class Test {
+                @ViewChildren('test')
+                value: QueryList<Widget>;
+            }
+            ",
+            Some(serde_json::json!([{ "preferQuerySignals": false }])),
+        ),
+        (
+            r"
+            class Test {
+                @ContentChild('test')
+                value: Widget;
+            }
+            ",
+            Some(serde_json::json!([{ "preferQuerySignals": false }])),
+        ),
+        (
+            r"
+            class Test {
+                @ContentChildren('test')
+                value: QueryList<Widget>;
+            }
+            ",
+            Some(serde_json::json!([{ "preferQuerySignals": false }])),
+        ),
+    ];
+
+    // Test with additionalSignalCreationFunctions
+    let fail_additional_functions = vec![(
+        r"
+        class Test {
+            testSignal = createSignal('test');
+        }
+        ",
+        Some(serde_json::json!([{ "additionalSignalCreationFunctions": ["createSignal"] }])),
+    )];
+
+    Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass_no_readonly, vec![])
+        .test_and_snapshot();
+
+    Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass_no_input_signals, vec![])
+        .test_and_snapshot();
+
+    Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass_no_query_signals, vec![])
+        .test_and_snapshot();
+
+    Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, vec![], fail_additional_functions)
+        .test_and_snapshot();
 }
