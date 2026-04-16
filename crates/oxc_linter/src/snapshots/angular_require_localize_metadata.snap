@@ -3,36 +3,36 @@ source: crates/oxc_linter/src/tester.rs
 ---
 
   ⚠ angular(require-localize-metadata): $localize tagged messages should contain a description
-   ╭─[require_localize_metadata.tsx:1:23]
+   ╭─[require_localize_metadata.tsx:1:22]
  1 │ const msg = $localize`Hello`;
-   ·                       ─────
+   ·                      ───────
    ╰────
   help: Add a description to help translators understand the context. Use the format: $localize`:description:text` or $localize`:meaning|description:text`
 
   ⚠ angular(require-localize-metadata): $localize tagged messages should contain a meaning
-   ╭─[require_localize_metadata.tsx:1:23]
+   ╭─[require_localize_metadata.tsx:1:22]
  1 │ const msg = $localize`:description:Hello`;
-   ·                       ──────────────────
+   ·                      ────────────────────
    ╰────
   help: Add a meaning to distinguish identical text that needs different translations. Use the format: $localize`:meaning|description:text`
 
   ⚠ angular(require-localize-metadata): $localize tagged messages should contain a custom id
-   ╭─[require_localize_metadata.tsx:1:23]
+   ╭─[require_localize_metadata.tsx:1:22]
  1 │ const msg = $localize`:description:Hello`;
-   ·                       ──────────────────
+   ·                      ────────────────────
    ╰────
   help: Add a custom ID for stable translation references. Use the format: $localize`:description@@customId:text`
 
   ⚠ angular(require-localize-metadata): $localize tagged messages should contain a custom id matching the pattern /^MSG_/ on 'wrong-id'
-   ╭─[require_localize_metadata.tsx:1:23]
+   ╭─[require_localize_metadata.tsx:1:22]
  1 │ const msg = $localize`:desc@@wrong-id:Hello`;
-   ·                       ─────────────────────
+   ·                      ───────────────────────
    ╰────
   help: Add a custom ID for stable translation references. Use the format: $localize`:description@@customId:text`
 
   ⚠ angular(require-localize-metadata): $localize tagged messages should contain a description
-   ╭─[require_localize_metadata.tsx:1:23]
+   ╭─[require_localize_metadata.tsx:1:22]
  1 │ const msg = $localize`::Hello`;
-   ·                       ───────
+   ·                      ─────────
    ╰────
   help: Add a description to help translators understand the context. Use the format: $localize`:description:text` or $localize`:meaning|description:text`

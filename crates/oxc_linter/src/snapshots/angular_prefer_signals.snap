@@ -1,66 +1,196 @@
 ---
 source: crates/oxc_linter/src/tester.rs
+assertion_line: 444
 ---
 
-  ⚠ angular(prefer-signals): Prefer signal-based `input()` over legacy `@Input()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @Input() name: string;
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal: Signal<number>;
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal: InputSignal<number>;
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal: ModelSignal<number>;
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal: WritableSignal<number>;
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = computed(() => 0);
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = linkedSignal(() => source);
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = contentChild('test');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = contentChild.required('test');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = contentChildren('test');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = input('');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = input.required('');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = model(42);
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = model.required();
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = signal(42);
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = signal(42).asReadonly();
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = toSignal(source);
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = viewChild('test');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = viewChild.required('test');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Properties declared using signals should be marked as `readonly` since they should not be reassigned
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             testSignal = viewChildren('test');
+   ·             ──────────
+ 4 │         }
+   ╰────
+
+  ⚠ angular(prefer-signals): Use `InputSignal`s (e.g. via `input()`) for Component input properties rather than the legacy `@Input()` decorator
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             @Input()
    ·             ────────
- 6 │         }
+ 4 │             value = 1;
    ╰────
-  help: Replace `@Input()` with `input()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.
 
-  ⚠ angular(prefer-signals): Prefer signal-based `input()` over legacy `@Input()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @Input({ required: true }) id: number;
-   ·             ──────────────────────────
- 6 │         }
+  ⚠ angular(prefer-signals): Use the `viewChild` function instead of the `ViewChild` decorator
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             @ViewChild('test')
+   ·             ──────────────────
+ 4 │             value: Widget;
    ╰────
-  help: Replace `@Input()` with `input()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.
 
-  ⚠ angular(prefer-signals): Prefer signal-based `output()` over legacy `@Output()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @Output() clicked = new EventEmitter<void>();
-   ·             ─────────
- 6 │         }
-   ╰────
-  help: Replace `@Output()` with `output()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.
-
-  ⚠ angular(prefer-signals): Prefer signal-based `viewChild()` over legacy `@ViewChild()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @ViewChild('container') container: ElementRef;
-   ·             ───────────────────────
- 6 │         }
-   ╰────
-  help: Replace `@ViewChild()` with `viewChild()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.
-
-  ⚠ angular(prefer-signals): Prefer signal-based `viewChildren()` over legacy `@ViewChildren()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @ViewChildren('item') items: QueryList<ElementRef>;
+  ⚠ angular(prefer-signals): Use the `viewChildren` function instead of the `ViewChildren` decorator
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             @ViewChildren('test')
    ·             ─────────────────────
- 6 │         }
+ 4 │             value: QueryList<Widget>;
    ╰────
-  help: Replace `@ViewChildren()` with `viewChildren()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.
 
-  ⚠ angular(prefer-signals): Prefer signal-based `contentChild()` over legacy `@ContentChild()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @ContentChild('content') content: ElementRef;
-   ·             ────────────────────────
- 6 │         }
+  ⚠ angular(prefer-signals): Use the `contentChild` function instead of the `ContentChild` decorator
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             @ContentChild('test')
+   ·             ─────────────────────
+ 4 │             value: Widget;
    ╰────
-  help: Replace `@ContentChild()` with `contentChild()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.
 
-  ⚠ angular(prefer-signals): Prefer signal-based `contentChildren()` over legacy `@ContentChildren()` decorator
-   ╭─[prefer_signals.tsx:5:13]
- 4 │         class TestComponent {
- 5 │             @ContentChildren('item') items: QueryList<ElementRef>;
+  ⚠ angular(prefer-signals): Use the `contentChildren` function instead of the `ContentChildren` decorator
+   ╭─[prefer_signals.tsx:3:13]
+ 2 │         class Test {
+ 3 │             @ContentChildren('test')
    ·             ────────────────────────
- 6 │         }
+ 4 │             value: QueryList<Widget>;
    ╰────
-  help: Replace `@ContentChildren()` with `contentChildren()` for better performance and reactivity. See https://angular.dev/guide/signals for migration guidance.

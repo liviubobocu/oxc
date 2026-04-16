@@ -740,20 +740,6 @@ fn test() {
       @Input() set setter(setter: string) {}
     }
   ",
-        // allowedNames configuration
-        (
-            r#"
-      @Component({
-        inputs: ['foo: aria-wrong']
-      })
-      class Test {
-        @Input('aria-wrong') set setter(setter: string) {}
-        func = input(1, { alias: 'aria-wrong' });
-        required = input.required<number>({ alias: 'aria-wrong' });
-      }
-      "#,
-            Some(serde_json::json!([{ "allowedNames": ["aria-wrong"] }])),
-        ),
         // Dynamic alias (variable reference) - not statically analyzable
         r"
     const change = 'change';
@@ -910,18 +896,6 @@ fn test() {
       ariaLabel = input.required<number>('aria-label');
     }
   ",
-        // allowedNames in inputs metadata
-        (
-            r#"
-      @Component({
-        inputs: ['foo: allowedName']
-      })
-      class Test {
-        @Input() bar: string;
-      }
-      "#,
-            Some(serde_json::json!([{ "allowedNames": ["allowedName"] }])),
-        ),
         // Alias equals selector + capitalize(propertyName)
         r"
     @Directive({
@@ -1040,17 +1014,6 @@ fn test() {
       })
       class Test {}
     ",
-        // inputs metadata with template literal key, aliased
-        (
-            r"
-      @Directive({
-        outputs: ['abort'],
-        'inputs': [boundary, `test: copy`, 'check: check'],
-      })
-      class Test {}
-    ",
-            Some(serde_json::json!([{ "allowedNames": ["check", "test"] }])),
-        ),
         // inputs metadata aliased with same name (should still report)
         r"
       @Component({
@@ -1114,18 +1077,6 @@ fn test() {
         @Input({ alias: 'change' }) change = (this.subject$ as Subject<{blur: boolean}>).pipe();
       }
     ",
-        // @Input on setter with alias
-        (
-            r"
-      @Component()
-      class Test {
-        @Input(`devicechange`) set setter(setter: string) {}
-
-        @Input('allowedName') test: string;
-      }
-    ",
-            Some(serde_json::json!([{ "allowedNames": ["allowedName"] }])),
-        ),
         // aria-* alias name does not match the property name
         r"
       @Directive({
@@ -1345,4 +1296,67 @@ fn test() {
     ];
 
     Tester::new(NoInputRename::NAME, NoInputRename::PLUGIN, pass, fail).test_and_snapshot();
+}
+
+#[test]
+fn test_with_allowed_names() {
+    use crate::tester::Tester;
+
+    let pass_with_options = vec![
+        // allowedNames configuration
+        (
+            r#"
+      @Component({
+        inputs: ['foo: aria-wrong']
+      })
+      class Test {
+        @Input('aria-wrong') set setter(setter: string) {}
+        func = input(1, { alias: 'aria-wrong' });
+        required = input.required<number>({ alias: 'aria-wrong' });
+      }
+      "#,
+            Some(serde_json::json!([{ "allowedNames": ["aria-wrong"] }])),
+        ),
+        // allowedNames in inputs metadata
+        (
+            r#"
+      @Component({
+        inputs: ['foo: allowedName']
+      })
+      class Test {
+        @Input() bar: string;
+      }
+      "#,
+            Some(serde_json::json!([{ "allowedNames": ["allowedName"] }])),
+        ),
+    ];
+
+    let fail_with_options = vec![
+        // inputs metadata with template literal key, aliased
+        (
+            r"
+      @Directive({
+        outputs: ['abort'],
+        'inputs': [boundary, `test: copy`, 'check: check'],
+      })
+      class Test {}
+    ",
+            Some(serde_json::json!([{ "allowedNames": ["check", "test"] }])),
+        ),
+        // @Input on setter with alias
+        (
+            r"
+      @Component()
+      class Test {
+        @Input(`devicechange`) set setter(setter: string) {}
+
+        @Input('allowedName') test: string;
+      }
+    ",
+            Some(serde_json::json!([{ "allowedNames": ["allowedName"] }])),
+        ),
+    ];
+
+    Tester::new(NoInputRename::NAME, NoInputRename::PLUGIN, pass_with_options, fail_with_options)
+        .test_and_snapshot();
 }

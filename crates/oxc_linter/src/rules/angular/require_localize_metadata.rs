@@ -45,7 +45,7 @@ pub struct RequireLocalizeMetadataConfig {
     #[serde(default)]
     require_meaning: bool,
     #[serde(default)]
-    require_custom_id: RequireCustomIdOption
+    require_custom_id: RequireCustomIdOption,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
@@ -54,7 +54,7 @@ pub enum RequireCustomIdOption {
     #[default]
     Disabled,
     Enabled(bool),
-    Pattern(String)
+    Pattern(String),
 }
 
 impl RequireCustomIdOption {
@@ -62,15 +62,15 @@ impl RequireCustomIdOption {
         match self {
             Self::Disabled => false,
             Self::Enabled(b) => *b,
-            Self::Pattern(_) => true
-}
+            Self::Pattern(_) => true,
+        }
     }
 
     fn get_pattern(&self) -> Option<&str> {
         match self {
             Self::Pattern(s) => Some(s.as_str()),
-            _ => None
-}
+            _ => None,
+        }
     }
 }
 
@@ -79,7 +79,7 @@ impl RequireCustomIdOption {
 pub struct RequireLocalizeMetadata {
     require_description: bool,
     require_meaning: bool,
-    require_custom_id: RequireCustomIdOption
+    require_custom_id: RequireCustomIdOption,
 }
 
 impl From<RequireLocalizeMetadataConfig> for RequireLocalizeMetadata {
@@ -87,8 +87,8 @@ impl From<RequireLocalizeMetadataConfig> for RequireLocalizeMetadata {
         Self {
             require_description: config.require_description,
             require_meaning: config.require_meaning,
-            require_custom_id: config.require_custom_id
-}
+            require_custom_id: config.require_custom_id,
+        }
     }
 }
 
@@ -166,8 +166,8 @@ impl Rule for RequireLocalizeMetadata {
         // Check if the tag is $localize
         let tag_name = match &tagged.tag {
             oxc_ast::ast::Expression::Identifier(ident) => ident.name.as_str(),
-            _ => return
-};
+            _ => return,
+        };
 
         if tag_name != "$localize" {
             return;
@@ -181,12 +181,16 @@ impl Rule for RequireLocalizeMetadata {
         let raw_text = first_quasi.value.raw.as_str().trim();
         let metadata = parse_localize_metadata(raw_text);
 
+        // Use the template literal span (includes backticks) to match ESLint's
+        // templateElement.loc which includes delimiter characters.
+        let report_span = tagged.quasi.span;
+
         if self.require_description && metadata.description.is_none() {
-            ctx.diagnostic(require_localize_description_diagnostic(first_quasi.span));
+            ctx.diagnostic(require_localize_description_diagnostic(report_span));
         }
 
         if self.require_meaning && metadata.meaning.is_none() {
-            ctx.diagnostic(require_localize_meaning_diagnostic(first_quasi.span));
+            ctx.diagnostic(require_localize_meaning_diagnostic(report_span));
         }
 
         if self.require_custom_id.is_required() {
@@ -196,8 +200,8 @@ impl Rule for RequireLocalizeMetadata {
                     lazy_regex::Regex::new(pattern).is_ok_and(|re| re.is_match(id))
                 }
                 (Some(_), None) => true,
-                (None, _) => false
-};
+                (None, _) => false,
+            };
 
             if !id_valid {
                 let pattern_message = match self.require_custom_id.get_pattern() {
@@ -207,10 +211,10 @@ impl Rule for RequireLocalizeMetadata {
                             metadata.custom_id.unwrap_or_default()
                         )
                     }
-                    None => String::new()
-};
+                    None => String::new(),
+                };
                 ctx.diagnostic(require_localize_custom_id_diagnostic(
-                    first_quasi.span,
+                    report_span,
                     &pattern_message,
                 ));
             }
@@ -222,7 +226,7 @@ impl Rule for RequireLocalizeMetadata {
 struct LocalizeMetadata<'a> {
     meaning: Option<&'a str>,
     description: Option<&'a str>,
-    custom_id: Option<&'a str>
+    custom_id: Option<&'a str>,
 }
 
 /// Parse metadata from the raw text of a $localize tagged template.
@@ -239,12 +243,16 @@ fn parse_localize_metadata(raw_text: &str) -> LocalizeMetadata<'_> {
         return result;
     }
 
-    // Find the end of the metadata block
-    let Some(end_index) = raw_text[1..].find(BLOCK_MARKER) else {
+    // Find the end of the metadata block using lastIndexOf to match the ESLint/Angular
+    // behavior. The closing colon is the LAST colon in the raw text, since the metadata
+    // block format is `:meaning|description@@customId:message text`.
+    let end_index = raw_text.rfind(BLOCK_MARKER).unwrap_or(0);
+    if end_index == 0 {
+        // Only the opening colon found, no closing colon
         return result;
-    };
+    }
 
-    let text = &raw_text[1..=end_index];
+    let text = &raw_text[1..end_index];
 
     // Split by @@ to get custom ID
     let (meaning_and_desc, custom_id) = if let Some(idx) = text.find(ID_SEPARATOR) {

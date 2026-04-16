@@ -4586,7 +4586,7 @@ impl RuleRunner for crate::rules::angular::prefer_output_readonly::PreferOutputR
 
 impl RuleRunner for crate::rules::angular::prefer_signals::PreferSignals {
     const NODE_TYPES: Option<&AstTypesBitset> =
-        Some(&AstTypesBitset::from_types(&[AstType::Decorator]));
+        Some(&AstTypesBitset::from_types(&[AstType::PropertyDefinition, AstType::Decorator]));
     const RUN_FUNCTIONS: RuleRunFunctionsImplemented = RuleRunFunctionsImplemented::Run;
 }
 

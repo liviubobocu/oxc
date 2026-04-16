@@ -10,10 +10,9 @@ use crate::{
     context::LintContext,
     rule::Rule,
     utils::{
-        SelectorStyle, SelectorType, check_selector_prefix, check_selector_style,
-        extract_selector_name, get_component_metadata,
-        get_decorator_name, get_metadata_property, parse_selector_type
-}
+        SelectorStyle, SelectorType,
+        get_component_metadata, get_decorator_name, get_metadata_property,
+    },
 };
 
 fn component_selector_type_diagnostic(span: Span, expected: &str) -> OxcDiagnostic {
@@ -24,46 +23,107 @@ fn component_selector_type_diagnostic(span: Span, expected: &str) -> OxcDiagnost
         .with_label(span)
 }
 
-fn component_selector_prefix_diagnostic(span: Span, prefixes: &[String]) -> OxcDiagnostic {
-    let prefix_list = prefixes.join(", ");
-    OxcDiagnostic::warn(format!("Component selector should be prefixed with one of: {prefix_list}"))
-        .with_help("Add a prefix to the selector (e.g., 'app-example' with prefix 'app')")
-        .with_label(span)
+fn component_selector_prefix_diagnostic(span: Span, prefix_text: &str) -> OxcDiagnostic {
+    OxcDiagnostic::warn(format!(
+        "Component selector should be prefixed with one of: {prefix_text}"
+    ))
+    .with_help("Add a prefix to the selector (e.g., 'app-example' with prefix 'app')")
+    .with_label(span)
 }
 
 fn component_selector_style_diagnostic(span: Span, expected: &str) -> OxcDiagnostic {
     OxcDiagnostic::warn(format!("Component selector should be {expected}"))
-        .with_help(format!("Use {expected} for the selector (e.g., 'app-example' for kebab-case)"))
+        .with_help(format!(
+            "Use {expected} for the selector (e.g., 'app-example' for kebab-case)"
+        ))
         .with_label(span)
 }
 
+fn component_selector_style_and_prefix_diagnostic(
+    span: Span,
+    style: &str,
+    prefix_text: &str,
+) -> OxcDiagnostic {
+    OxcDiagnostic::warn(format!(
+        "Component selector should be {style} and prefixed with one of: {prefix_text}"
+    ))
+    .with_help(format!(
+        "Use {style} for the selector with a valid prefix (e.g., 'app-example')"
+    ))
+    .with_label(span)
+}
+
+fn component_selector_after_prefix_diagnostic(span: Span, prefix_text: &str) -> OxcDiagnostic {
+    OxcDiagnostic::warn(format!(
+        "There should be a selector after the {prefix_text} prefix"
+    ))
+    .with_label(span)
+}
+
+fn component_selector_shadow_dom_style_diagnostic(span: Span) -> OxcDiagnostic {
+    OxcDiagnostic::warn(
+        "The selector of a ShadowDom-encapsulated component should be kebab-case",
+    )
+    .with_label(span)
+}
+
+// ── Config types ────────────────────────────────────────────────────────
+
+/// Configuration for a single selector rule.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
-pub struct ComponentSelectorConfig {
+pub struct SingleSelectorConfig {
     #[serde(default)]
-    r#type: Option<String>,
+    r#type: TypeConfig,
     #[serde(default)]
     prefix: PrefixConfig,
     #[serde(default = "default_style")]
-    style: String
+    style: String,
 }
 
+/// Type can be a single string or array of strings.
+#[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
+#[serde(untagged)]
+pub enum TypeConfig {
+    Single(String),
+    Multiple(Vec<String>),
+    #[default]
+    None,
+}
+
+impl TypeConfig {
+    fn as_vec(&self) -> Vec<String> {
+        match self {
+            TypeConfig::Single(s) => vec![s.clone()],
+            TypeConfig::Multiple(v) => v.clone(),
+            TypeConfig::None => vec![],
+        }
+    }
+}
+
+/// Prefix can be a single string or array of strings.
 #[derive(Debug, Clone, Deserialize, Default, JsonSchema)]
 #[serde(untagged)]
 pub enum PrefixConfig {
     Single(String),
     Multiple(Vec<String>),
     #[default]
-    None
+    None,
 }
 
 impl PrefixConfig {
     fn as_vec(&self) -> Vec<String> {
         match self {
-            PrefixConfig::Single(s) => vec![s.clone()],
-            PrefixConfig::Multiple(v) => v.clone(),
-            PrefixConfig::None => vec![]
-}
+            PrefixConfig::Single(s) => {
+                if s.is_empty() {
+                    vec![]
+                } else {
+                    vec![s.clone()]
+                }
+            }
+            PrefixConfig::Multiple(v) => v.iter().filter(|s| !s.is_empty()).cloned().collect(),
+            PrefixConfig::None => vec![],
+        }
     }
 }
 
@@ -71,45 +131,90 @@ fn default_style() -> String {
     "kebab-case".to_string()
 }
 
-impl Default for ComponentSelectorConfig {
+impl Default for SingleSelectorConfig {
     fn default() -> Self {
         Self {
-            r#type: Some("element".to_string()),
+            r#type: TypeConfig::Single("element".to_string()),
             prefix: PrefixConfig::None,
-            style: default_style()
+            style: default_style(),
+        }
+    }
 }
+
+/// Full configuration - can be a single config object or array of config objects.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ComponentSelectorConfig {
+    Single(SingleSelectorConfig),
+    Multiple(Vec<SingleSelectorConfig>),
+}
+
+impl Default for ComponentSelectorConfig {
+    fn default() -> Self {
+        ComponentSelectorConfig::Single(SingleSelectorConfig::default())
+    }
+}
+
+// ── Parsed rule types ───────────────────────────────────────────────────
+
+/// A single parsed rule configuration.
+#[derive(Debug, Clone)]
+pub struct ParsedSelectorRule {
+    selector_types: Vec<SelectorType>,
+    prefixes: Vec<String>,
+    style: SelectorStyle,
+}
+
+impl From<SingleSelectorConfig> for ParsedSelectorRule {
+    fn from(config: SingleSelectorConfig) -> Self {
+        let selector_types: Vec<SelectorType> = config
+            .r#type
+            .as_vec()
+            .iter()
+            .filter_map(|t| match t.as_str() {
+                "element" => Some(SelectorType::Element),
+                "attribute" => Some(SelectorType::Attribute),
+                _ => None,
+            })
+            .collect();
+        let style = match config.style.as_str() {
+            "camelCase" => SelectorStyle::CamelCase,
+            _ => SelectorStyle::KebabCase,
+        };
+        Self {
+            selector_types,
+            prefixes: config.prefix.as_vec(),
+            style,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ComponentSelector {
-    selector_type: Option<SelectorType>,
-    prefixes: Vec<String>,
-    style: SelectorStyle
+    rules: Vec<ParsedSelectorRule>,
 }
 
 impl Default for ComponentSelector {
     fn default() -> Self {
         Self {
-            selector_type: Some(SelectorType::Element),
-            prefixes: vec![],
-            style: SelectorStyle::KebabCase
-}
+            rules: vec![ParsedSelectorRule {
+                selector_types: vec![SelectorType::Element],
+                prefixes: vec![],
+                style: SelectorStyle::KebabCase,
+            }],
+        }
     }
 }
 
 impl From<ComponentSelectorConfig> for ComponentSelector {
     fn from(config: ComponentSelectorConfig) -> Self {
-        let selector_type = config.r#type.as_deref().and_then(|t| match t {
-            "element" => Some(SelectorType::Element),
-            "attribute" => Some(SelectorType::Attribute),
-            _ => None
-});
-        let style = match config.style.as_str() {
-            "camelCase" => SelectorStyle::CamelCase,
-            _ => SelectorStyle::KebabCase
-};
-        Self { selector_type, prefixes: config.prefix.as_vec(), style }
+        let rules = match config {
+            ComponentSelectorConfig::Single(single) => vec![ParsedSelectorRule::from(single)],
+            ComponentSelectorConfig::Multiple(multiple) => {
+                multiple.into_iter().map(ParsedSelectorRule::from).collect()
+            }
+        };
+        Self { rules }
     }
 }
 
@@ -185,7 +290,7 @@ impl Rule for ComponentSelector {
         if decorator_name != "Component" {
             return;
         }
-        // Note: Match ESLint behavior - does not verify imports for exact parity
+
         // Get the metadata object
         let Some(metadata) = get_component_metadata(decorator) else {
             return;
@@ -196,8 +301,10 @@ impl Rule for ComponentSelector {
             return;
         };
 
-        // Extract the string value from the selector expression
-        let selector = match selector_expr {
+        // Extract the string value from the selector expression.
+        // If the selector is a variable reference or shorthand property, skip validation
+        // (matches ESLint behavior where parseSelectorNode returns null for non-literals).
+        let selector_raw = match selector_expr {
             oxc_ast::ast::Expression::StringLiteral(lit) => lit.value.as_str(),
             oxc_ast::ast::Expression::TemplateLiteral(lit) => {
                 if lit.expressions.is_empty() && lit.quasis.len() == 1 {
@@ -206,50 +313,397 @@ impl Rule for ComponentSelector {
                     return;
                 }
             }
-            _ => return
-};
-
-        // Extract the selector name
-        let Some(selector_name) = extract_selector_name(selector) else {
-            return;
+            _ => return,
         };
 
-        // Get the span for error reporting (use selector value span, matching ESLint)
+        // Get the span for error reporting
         let selector_span = selector_expr.span();
 
-        // Check type
-        if let Some(expected_type) = &self.selector_type
-            && let Some(actual_type) = parse_selector_type(selector)
-                && actual_type != *expected_type {
-                    let type_str = match expected_type {
-                        SelectorType::Element => "an element",
-                        SelectorType::Attribute => "an attribute"
-};
-                    ctx.diagnostic(component_selector_type_diagnostic(selector_span, type_str));
+        // Parse the CSS selector to extract element and attribute names
+        let parsed = parse_css_selector(selector_raw);
+        if parsed.elements.is_empty() && parsed.attributes.is_empty() {
+            return;
+        }
+
+        // Check if ShadowDom encapsulation is used
+        let is_shadow_dom = has_shadow_dom_encapsulation(metadata);
+
+        // Determine the actual selector type (for multi-config dispatch)
+        let actual_type = get_actual_selector_type(&parsed);
+
+        // For multi-config (rules.len() > 1), pick the applicable rule based on actual type
+        let applicable_rules: Vec<&ParsedSelectorRule> = if self.rules.len() > 1 {
+            if let Some(actual) = actual_type {
+                self.rules
+                    .iter()
+                    .filter(|r| r.selector_types.contains(&actual))
+                    .collect()
+            } else {
+                return;
+            }
+        } else {
+            self.rules.iter().collect()
+        };
+
+        if applicable_rules.is_empty() {
+            return;
+        }
+
+        // For each applicable rule, compute the check results (matching ESLint's checkSelector)
+        // Then apply the error priority logic per rule.
+        for rule in &applicable_rules {
+            if rule.selector_types.is_empty() {
+                continue;
+            }
+
+            let valid_selectors = get_valid_selectors_for_types(&parsed, &rule.selector_types);
+
+            // Determine effective style (ShadowDom forces kebab-case)
+            let style_overridden = is_shadow_dom && rule.style != SelectorStyle::KebabCase;
+            let effective_style = if style_overridden {
+                SelectorStyle::KebabCase
+            } else {
+                rule.style
+            };
+
+            // Compute all checks at once (matching ESLint's checkSelector return)
+            let has_expected_type = !valid_selectors.is_empty();
+
+            let has_expected_prefix = rule.prefixes.is_empty()
+                || valid_selectors
+                    .iter()
+                    .any(|sel| check_prefix_with_style(sel, &rule.prefixes, effective_style));
+
+            let has_expected_style = valid_selectors
+                .iter()
+                .any(|sel| check_style(sel, effective_style));
+
+            let has_selector_after = rule.prefixes.is_empty()
+                || valid_selectors
+                    .iter()
+                    .any(|sel| has_selector_after_prefix(sel, &rule.prefixes));
+
+            // If all checks pass, we're good (no error for this rule)
+            let all_pass = has_expected_type
+                && has_expected_prefix
+                && has_expected_style
+                && has_selector_after;
+
+            if all_pass {
+                // ShadowDom-specific: selector must contain a hyphen
+                // This check is done AFTER checkSelector but BEFORE error reporting,
+                // matching ESLint's flow.
+                if style_overridden {
+                    let has_hyphen = parsed.elements.iter().any(|elem| elem.contains('-'));
+                    if !has_hyphen {
+                        ctx.diagnostic(component_selector_shadow_dom_style_diagnostic(
+                            selector_span,
+                        ));
+                        return;
+                    }
+                }
+                // All checks passed
+                return;
+            }
+
+            // ShadowDom hyphen check (before error priority logic, matching ESLint)
+            if style_overridden {
+                let has_hyphen = parsed.elements.iter().any(|elem| elem.contains('-'));
+                if !has_hyphen {
+                    ctx.diagnostic(component_selector_shadow_dom_style_diagnostic(
+                        selector_span,
+                    ));
                     return;
                 }
+            }
 
-        // Check prefix
-        if !self.prefixes.is_empty() {
-            let prefix_refs: Vec<&str> = self.prefixes.iter().map(std::string::String::as_str).collect();
-            if !check_selector_prefix(selector_name, &prefix_refs) {
+            // Error priority logic (matching ESLint's component-selector.ts flow)
+            // Priority 1: type
+            if !has_expected_type {
+                let type_str = if rule.selector_types.contains(&SelectorType::Element) {
+                    "an element"
+                } else {
+                    "an attribute"
+                };
+                ctx.diagnostic(component_selector_type_diagnostic(selector_span, type_str));
+                return;
+            }
+
+            // Priority 2: selector after prefix
+            if !has_selector_after && !rule.prefixes.is_empty() {
+                let prefix_text = format_prefix_for_message(&rule.prefixes);
+                ctx.diagnostic(component_selector_after_prefix_diagnostic(
+                    selector_span,
+                    &prefix_text,
+                ));
+                return;
+            }
+
+            // Priority 3: style
+            if !has_expected_style {
+                if style_overridden {
+                    ctx.diagnostic(component_selector_shadow_dom_style_diagnostic(
+                        selector_span,
+                    ));
+                } else if !has_expected_prefix && !rule.prefixes.is_empty() {
+                    // Both style and prefix wrong → combined error
+                    let style_str = match effective_style {
+                        SelectorStyle::KebabCase => "kebab-case",
+                        SelectorStyle::CamelCase => "camelCase",
+                    };
+                    let prefix_text = format_prefix_list(&rule.prefixes);
+                    ctx.diagnostic(component_selector_style_and_prefix_diagnostic(
+                        selector_span,
+                        style_str,
+                        &prefix_text,
+                    ));
+                } else {
+                    let style_str = match effective_style {
+                        SelectorStyle::KebabCase => "kebab-case",
+                        SelectorStyle::CamelCase => "camelCase",
+                    };
+                    ctx.diagnostic(component_selector_style_diagnostic(
+                        selector_span, style_str,
+                    ));
+                }
+                return;
+            }
+
+            // Priority 4: prefix
+            if !has_expected_prefix && !rule.prefixes.is_empty() {
+                let prefix_text = format_prefix_list(&rule.prefixes);
                 ctx.diagnostic(component_selector_prefix_diagnostic(
                     selector_span,
-                    &self.prefixes,
+                    &prefix_text,
                 ));
                 return;
             }
         }
+    }
+}
 
-        // Check style
-        if !check_selector_style(selector_name, self.style) {
-            let style_str = match self.style {
-                SelectorStyle::KebabCase => "kebab-case",
-                SelectorStyle::CamelCase => "camelCase"
-};
-            ctx.diagnostic(component_selector_style_diagnostic(selector_span, style_str));
+// ── CSS selector parsing ────────────────────────────────────────────────
+
+/// Parsed CSS selector with extracted element and attribute names.
+#[derive(Debug, Default)]
+struct ParsedSelector {
+    elements: Vec<String>,
+    attributes: Vec<String>,
+}
+
+/// Parse a CSS selector string to extract element and attribute names.
+/// Handles complex selectors like "app-foo[bar].class" and comma-separated lists.
+fn parse_css_selector(selector: &str) -> ParsedSelector {
+    let mut result = ParsedSelector::default();
+
+    // Handle comma-separated selectors
+    for part in selector.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+
+        // Extract attributes (content within [...])
+        let mut remaining = part;
+        while let Some(start) = remaining.find('[') {
+            if let Some(end) = remaining[start..].find(']') {
+                let attr_content = &remaining[start + 1..start + end];
+                // Handle [attr=value] format
+                let attr_name = attr_content.split('=').next().unwrap_or(attr_content);
+                if !attr_name.is_empty() {
+                    result.attributes.push(attr_name.to_string());
+                }
+                remaining = &remaining[start + end + 1..];
+            } else {
+                break;
+            }
+        }
+
+        // Extract element name (everything before first [, ., or :)
+        let element_end = part
+            .find(|c| c == '[' || c == '.' || c == ':' || c == '#')
+            .unwrap_or(part.len());
+        let element_name = part[..element_end].trim();
+        if !element_name.is_empty()
+            && element_name
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic())
+        {
+            result.elements.push(element_name.to_string());
         }
     }
+
+    result
+}
+
+/// Get valid selectors based on the expected types.
+fn get_valid_selectors_for_types<'a>(
+    parsed: &'a ParsedSelector,
+    types: &[SelectorType],
+) -> Vec<&'a str> {
+    let mut selectors = Vec::new();
+
+    for selector_type in types {
+        match selector_type {
+            SelectorType::Element => {
+                selectors.extend(parsed.elements.iter().map(std::string::String::as_str));
+            }
+            SelectorType::Attribute => {
+                selectors.extend(parsed.attributes.iter().map(std::string::String::as_str));
+            }
+        }
+    }
+
+    selectors
+}
+
+/// Determine the actual selector type from the parsed selector.
+/// Used for multi-config dispatch to find which config applies.
+/// Matches ESLint's getActualSelectorType: attributes take priority over elements.
+fn get_actual_selector_type(parsed: &ParsedSelector) -> Option<SelectorType> {
+    // Attribute selectors take priority (matching ESLint behavior)
+    if !parsed.attributes.is_empty() {
+        return Some(SelectorType::Attribute);
+    }
+
+    if !parsed.elements.is_empty() {
+        return Some(SelectorType::Element);
+    }
+
+    None
+}
+
+/// Check if the metadata has `encapsulation: ViewEncapsulation.ShadowDom`.
+fn has_shadow_dom_encapsulation(metadata: &oxc_ast::ast::ObjectExpression<'_>) -> bool {
+    let Some(encapsulation_expr) = get_metadata_property(metadata, "encapsulation") else {
+        return false;
+    };
+
+    // Match: ViewEncapsulation.ShadowDom
+    if let oxc_ast::ast::Expression::StaticMemberExpression(member) = encapsulation_expr {
+        if let oxc_ast::ast::Expression::Identifier(obj) = &member.object {
+            return obj.name.as_str() == "ViewEncapsulation"
+                && member.property.name.as_str() == "ShadowDom";
+        }
+    }
+
+    false
+}
+
+/// Check if selector has the correct prefix considering the expected style.
+/// Matches ESLint's SelectorValidator.prefix behavior:
+/// - For camelCase: after prefix, the next char must equal its own toUpperCase()
+///   (this is true for uppercase letters AND non-alphabetic chars like '-', digits)
+/// - For kebab-case: after prefix, the next char must be '-'
+fn check_prefix_with_style(selector: &str, prefixes: &[String], style: SelectorStyle) -> bool {
+    if prefixes.is_empty() {
+        return true;
+    }
+
+    prefixes.iter().any(|prefix| {
+        if prefix.is_empty() {
+            return true;
+        }
+        if let Some(rest) = selector.strip_prefix(prefix.as_str()) {
+            // After prefix, we need either:
+            // - End of selector (exact match - handled later by selectorAfterPrefix)
+            // - For camelCase: char equals its own uppercase (letters A-Z, or non-alpha)
+            // - For kebab-case: hyphen
+            if rest.is_empty() {
+                return true;
+            }
+            let next_char = rest.chars().next().unwrap();
+            match style {
+                SelectorStyle::CamelCase => {
+                    // ESLint: selectorAfterPrefix[0] === selectorAfterPrefix[0].toUpperCase()
+                    // This is true for uppercase letters, digits, hyphens, etc.
+                    // Only false for lowercase letters a-z.
+                    !next_char.is_ascii_lowercase()
+                }
+                SelectorStyle::KebabCase => next_char == '-',
+            }
+        } else {
+            false
+        }
+    })
+}
+
+/// Check if there's actual selector content after the prefix.
+/// Matches ESLint's SelectorValidator.selectorAfterPrefix behavior:
+/// - If the prefix matches, there must be content after it
+/// - If the prefix doesn't match at all, this check passes (returns true)
+///   because the prefix mismatch is caught by the prefix check instead
+fn has_selector_after_prefix(selector: &str, prefixes: &[String]) -> bool {
+    if prefixes.is_empty() {
+        return true;
+    }
+
+    prefixes.iter().any(|prefix| {
+        if prefix.is_empty() {
+            return true;
+        }
+        if let Some(rest) = selector.strip_prefix(prefix.as_str()) {
+            // Prefix matched - there must be content after it
+            !rest.is_empty()
+        } else {
+            // Prefix didn't match at all - this check passes
+            // (the prefix check will catch the mismatch separately)
+            true
+        }
+    })
+}
+
+/// Check if selector matches the expected style.
+/// Matches ESLint's SelectorValidator patterns:
+/// - kebabCase: /^[a-z0-9]+(-[a-z0-9]+)*$/
+/// - camelCase: /^[a-zA-Z0-9[\]]+$/
+fn check_style(selector: &str, style: SelectorStyle) -> bool {
+    match style {
+        SelectorStyle::KebabCase => {
+            // kebab-case regex: ^[a-z0-9]+(-[a-z0-9]+)*$
+            if selector.is_empty() {
+                return false;
+            }
+            // Split on hyphens and validate each part
+            let parts: Vec<&str> = selector.split('-').collect();
+            parts.iter().all(|part| {
+                !part.is_empty()
+                    && part
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+            })
+        }
+        SelectorStyle::CamelCase => {
+            // camelCase regex: ^[a-zA-Z0-9[\]]+$
+            // Note: brackets are included in the pattern but we're checking extracted names
+            !selector.is_empty() && selector.chars().all(|c| c.is_ascii_alphanumeric())
+        }
+    }
+}
+
+/// Format prefix list for error message: "\"app\", \"cd\" or \"ng\"".
+fn format_prefix_list(prefixes: &[String]) -> String {
+    if prefixes.is_empty() {
+        return String::new();
+    }
+    if prefixes.len() == 1 {
+        return format!("\"{}\"", prefixes[0]);
+    }
+    let last = prefixes.last().unwrap();
+    let rest: Vec<_> = prefixes[..prefixes.len() - 1]
+        .iter()
+        .map(|p| format!("\"{}\"", p))
+        .collect();
+    format!("{} or \"{}\"", rest.join(", "), last)
+}
+
+/// Format prefix for "selectorAfterPrefix" message: "\"app\"".
+fn format_prefix_for_message(prefixes: &[String]) -> String {
+    if prefixes.is_empty() {
+        return String::new();
+    }
+    format!("\"{}\"", prefixes[0])
 }
 
 #[test]
@@ -297,19 +751,142 @@ fn test() {
             ",
             Some(serde_json::json!([{ "type": "element", "style": "kebab-case" }])),
         ),
-        // Non-Angular Component
+        // Note: ESLint doesn't verify import source either, so @Component from
+        // any import is checked. The rule only skips non-Component decorators.
+        // Variable selector name (should skip - not a static string)
         (
             r"
-            import { Component } from 'other-lib';
+            const selectorName = 'appFooBar';
             @Component({
-                selector: 'INVALID',
-                template: ''
+                selector: selectorName
             })
-            class ExampleComponent {}
+            class Test {}
             ",
             Some(
                 serde_json::json!([{ "type": "element", "prefix": "app", "style": "kebab-case" }]),
             ),
+        ),
+        // Shorthand selector property (should skip)
+        (
+            r"
+            const selecto = 'appFooBar';
+            @Component({
+                selector,
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": "app", "style": "kebab-case" }]),
+            ),
+        ),
+        // Template literal selector
+        (
+            r"
+            @Component({
+                selector: `[appFooBar]`
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": ["attribute", "element"], "prefix": ["app", "ng"], "style": "camelCase" }]),
+            ),
+        ),
+        // Multiline template literal selector
+        (
+            r"
+            @Component({
+                selector: `
+                  [appFooBar]
+                `
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": ["attribute", "element"], "prefix": ["app", "ng"], "style": "camelCase" }]),
+            ),
+        ),
+        // ShadowDom encapsulation with kebab-case (valid)
+        (
+            r"
+            @Component({
+                selector: `app-foo-bar`,
+                encapsulation: ViewEncapsulation.ShadowDom
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": ["element"], "prefix": ["app"], "style": "camelCase" }]),
+            ),
+        ),
+        // Directive decorator (should not trigger for component-selector)
+        (
+            r"
+            @Directive({
+                selector: 'app-foo-bar'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": ["element"], "prefix": ["bar"], "style": "kebab-case" }]),
+            ),
+        ),
+        // Complex selector
+        (
+            r"
+            @Component({
+                selector: 'app-foo-bar[baz].app'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": ["app", "cd", "ng"], "style": "kebab-case" }]),
+            ),
+        ),
+        // Single config array - element
+        (
+            r"
+            @Component({
+                selector: 'app-foo-bar'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[{ "type": "element", "prefix": "app", "style": "kebab-case" }]])),
+        ),
+        // Single config array - attribute
+        (
+            r"
+            @Component({
+                selector: '[appFooBar]'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[{ "type": "attribute", "prefix": "app", "style": "camelCase" }]])),
+        ),
+        // Multiple configs - element matches
+        (
+            r"
+            @Component({
+                selector: 'app-foo-bar'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[
+                { "type": "element", "prefix": "app", "style": "kebab-case" },
+                { "type": "attribute", "prefix": "app", "style": "camelCase" }
+            ]])),
+        ),
+        // Multiple configs - attribute matches
+        (
+            r"
+            @Component({
+                selector: '[appFooBar]'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[
+                { "type": "element", "prefix": "app", "style": "kebab-case" },
+                { "type": "attribute", "prefix": "app", "style": "camelCase" }
+            ]])),
         ),
     ];
 
@@ -355,6 +932,192 @@ fn test() {
             Some(
                 serde_json::json!([{ "type": "element", "prefix": "app", "style": "kebab-case" }]),
             ),
+        ),
+        // Missing prefix (foo-bar when sg required)
+        (
+            r"
+            @Component({
+                selector: 'foo-bar'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": "sg", "style": "kebab-case" }]),
+            ),
+        ),
+        // Wrong prefix (app- when sg required)
+        (
+            r"
+            @Component({
+                selector: 'app-foo-bar'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": "sg", "style": "kebab-case" }]),
+            ),
+        ),
+        // Attribute with wrong prefix
+        (
+            r"
+            @Component({
+                selector: '[app-foo-bar]'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "attribute", "prefix": ["cd", "ng"], "style": "kebab-case" }]),
+            ),
+        ),
+        // Complex selector wrong prefix
+        (
+            r"
+            @Component({
+                selector: 'app-foo-bar[baz].app'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": ["foo", "cd", "ng"], "style": "kebab-case" }]),
+            ),
+        ),
+        // Wrong style (kebab-case instead of camelCase for attribute)
+        (
+            r"
+            @Component({
+                selector: '[ng-bar-foo]'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "attribute", "prefix": "ng", "style": "camelCase" }]),
+            ),
+        ),
+        // Style and prefix failure (camelCase element when kebab-case required)
+        (
+            r"
+            @Component({
+                selector: 'appFooBar'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": "app", "style": "kebab-case" }]),
+            ),
+        ),
+        // Selector equals prefix exactly (kebab-case)
+        (
+            r"
+            @Component({
+                selector: 'app'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": "app", "style": "kebab-case" }]),
+            ),
+        ),
+        // Selector equals prefix exactly (camelCase)
+        (
+            r"
+            @Component({
+                selector: 'app'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "style": "camelCase", "prefix": "app" }]),
+            ),
+        ),
+        // Wrong type (attribute instead of element with camelCase)
+        (
+            r"
+            @Component({
+                selector: '[appFooBar]'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": ["app", "ng"], "style": "camelCase" }]),
+            ),
+        ),
+        // ShadowDom with wrong style (not kebab-case)
+        (
+            r"
+            @Component({
+                encapsulation: ViewEncapsulation.ShadowDom,
+                selector: 'appFooBar'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": ["app"], "style": "camelCase" }]),
+            ),
+        ),
+        // ShadowDom without hyphen
+        (
+            r"
+            @Component({
+                encapsulation: ViewEncapsulation.ShadowDom,
+                selector: 'appselector'
+            })
+            class Test {}
+            ",
+            Some(
+                serde_json::json!([{ "type": "element", "prefix": ["app"], "style": "camelCase" }]),
+            ),
+        ),
+        // Multiple configs - element wrong style
+        (
+            r"
+            @Component({
+                selector: 'appFooBar'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[
+                { "type": "element", "prefix": "app", "style": "kebab-case" },
+                { "type": "attribute", "prefix": "app", "style": "camelCase" }
+            ]])),
+        ),
+        // Multiple configs - attribute wrong style
+        (
+            r"
+            @Component({
+                selector: '[app-foo-bar]'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[
+                { "type": "element", "prefix": "app", "style": "kebab-case" },
+                { "type": "attribute", "prefix": "app", "style": "camelCase" }
+            ]])),
+        ),
+        // Multiple configs - element wrong prefix
+        (
+            r"
+            @Component({
+                selector: 'lib-foo-bar'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[
+                { "type": "element", "prefix": "app", "style": "kebab-case" },
+                { "type": "attribute", "prefix": "app", "style": "camelCase" }
+            ]])),
+        ),
+        // Multiple configs - attribute wrong prefix
+        (
+            r"
+            @Component({
+                selector: '[libFooBar]'
+            })
+            class Test {}
+            ",
+            Some(serde_json::json!([[
+                { "type": "element", "prefix": "app", "style": "kebab-case" },
+                { "type": "attribute", "prefix": "app", "style": "camelCase" }
+            ]])),
         ),
     ];
 

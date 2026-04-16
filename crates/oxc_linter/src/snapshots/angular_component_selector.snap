@@ -3,34 +3,159 @@ source: crates/oxc_linter/src/tester.rs
 ---
 
   ⚠ angular(component-selector): Component selector should be used as an element
-   ╭─[component_selector.tsx:3:13]
- 2 │                 import { Component } from '@angular/core';
- 3 │ ╭─▶             @Component({
- 4 │ │                   selector: '[appExample]',
- 5 │ │                   template: ''
- 6 │ ╰─▶             })
- 7 │                 class ExampleComponent {}
+   ╭─[component_selector.tsx:4:27]
+ 3 │             @Component({
+ 4 │                 selector: '[appExample]',
+   ·                           ──────────────
+ 5 │                 template: ''
    ╰────
   help: Change the selector to use an element style (e.g., 'app-example' for element)
 
-  ⚠ angular(component-selector): Component selector should be prefixed with one of: app
-   ╭─[component_selector.tsx:3:13]
- 2 │                 import { Component } from '@angular/core';
- 3 │ ╭─▶             @Component({
- 4 │ │                   selector: 'example',
- 5 │ │                   template: ''
- 6 │ ╰─▶             })
- 7 │                 class ExampleComponent {}
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "app"
+   ╭─[component_selector.tsx:4:27]
+ 3 │             @Component({
+ 4 │                 selector: 'example',
+   ·                           ─────────
+ 5 │                 template: ''
    ╰────
   help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')
 
-  ⚠ angular(component-selector): Component selector should be prefixed with one of: app
-   ╭─[component_selector.tsx:3:13]
- 2 │                 import { Component } from '@angular/core';
- 3 │ ╭─▶             @Component({
- 4 │ │                   selector: 'AppExample',
- 5 │ │                   template: ''
- 6 │ ╰─▶             })
- 7 │                 class ExampleComponent {}
+  ⚠ angular(component-selector): Component selector should be kebab-case and prefixed with one of: "app"
+   ╭─[component_selector.tsx:4:27]
+ 3 │             @Component({
+ 4 │                 selector: 'AppExample',
+   ·                           ────────────
+ 5 │                 template: ''
+   ╰────
+  help: Use kebab-case for the selector with a valid prefix (e.g., 'app-example')
+
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "sg"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'foo-bar'
+   ·                           ─────────
+ 4 │             })
+   ╰────
+  help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')
+
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "sg"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'app-foo-bar'
+   ·                           ─────────────
+ 4 │             })
+   ╰────
+  help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')
+
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "cd" or "ng"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: '[app-foo-bar]'
+   ·                           ───────────────
+ 4 │             })
+   ╰────
+  help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')
+
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "foo", "cd" or "ng"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'app-foo-bar[baz].app'
+   ·                           ──────────────────────
+ 4 │             })
+   ╰────
+  help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')
+
+  ⚠ angular(component-selector): Component selector should be camelCase
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: '[ng-bar-foo]'
+   ·                           ──────────────
+ 4 │             })
+   ╰────
+  help: Use camelCase for the selector (e.g., 'app-example' for kebab-case)
+
+  ⚠ angular(component-selector): Component selector should be kebab-case and prefixed with one of: "app"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'appFooBar'
+   ·                           ───────────
+ 4 │             })
+   ╰────
+  help: Use kebab-case for the selector with a valid prefix (e.g., 'app-example')
+
+  ⚠ angular(component-selector): There should be a selector after the "app" prefix
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'app'
+   ·                           ─────
+ 4 │             })
+   ╰────
+
+  ⚠ angular(component-selector): There should be a selector after the "app" prefix
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'app'
+   ·                           ─────
+ 4 │             })
+   ╰────
+
+  ⚠ angular(component-selector): Component selector should be used as an element
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: '[appFooBar]'
+   ·                           ─────────────
+ 4 │             })
+   ╰────
+  help: Change the selector to use an element style (e.g., 'app-example' for element)
+
+  ⚠ angular(component-selector): The selector of a ShadowDom-encapsulated component should be kebab-case
+   ╭─[component_selector.tsx:4:27]
+ 3 │                 encapsulation: ViewEncapsulation.ShadowDom,
+ 4 │                 selector: 'appFooBar'
+   ·                           ───────────
+ 5 │             })
+   ╰────
+
+  ⚠ angular(component-selector): The selector of a ShadowDom-encapsulated component should be kebab-case
+   ╭─[component_selector.tsx:4:27]
+ 3 │                 encapsulation: ViewEncapsulation.ShadowDom,
+ 4 │                 selector: 'appselector'
+   ·                           ─────────────
+ 5 │             })
+   ╰────
+
+  ⚠ angular(component-selector): Component selector should be kebab-case and prefixed with one of: "app"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'appFooBar'
+   ·                           ───────────
+ 4 │             })
+   ╰────
+  help: Use kebab-case for the selector with a valid prefix (e.g., 'app-example')
+
+  ⚠ angular(component-selector): Component selector should be camelCase
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: '[app-foo-bar]'
+   ·                           ───────────────
+ 4 │             })
+   ╰────
+  help: Use camelCase for the selector (e.g., 'app-example' for kebab-case)
+
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "app"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: 'lib-foo-bar'
+   ·                           ─────────────
+ 4 │             })
+   ╰────
+  help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')
+
+  ⚠ angular(component-selector): Component selector should be prefixed with one of: "app"
+   ╭─[component_selector.tsx:3:27]
+ 2 │             @Component({
+ 3 │                 selector: '[libFooBar]'
+   ·                           ─────────────
+ 4 │             })
    ╰────
   help: Add a prefix to the selector (e.g., 'app-example' with prefix 'app')

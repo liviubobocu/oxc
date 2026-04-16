@@ -1,14 +1,14 @@
 use oxc_ast::AstKind;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
-use oxc_span::Span;
+use oxc_span::{GetSpan, Span};
 
 use crate::{
     AstNode,
     context::LintContext,
     rule::Rule,
     utils::{
-        class_implements_interface, get_class_angular_decorator,
+        class_implements_interface, get_class_angular_decorator_lenient,
         get_lifecycle_interface_for_method, is_lifecycle_method
 }
 };
@@ -19,7 +19,7 @@ fn use_lifecycle_interface_diagnostic(
     interface_name: &str,
 ) -> OxcDiagnostic {
     OxcDiagnostic::warn(format!(
-        "Lifecycle interface `{interface_name}` should be implemented for method `{method_name}`"
+        "Lifecycle interface '{interface_name}' should be implemented for method '{method_name}'. (https://angular.dev/style-guide#use-lifecycle-hook-interfaces)"
     ))
     .with_help(format!(
         "Add `implements {interface_name}` to the class declaration and import `{interface_name}` from '@angular/core'"
@@ -111,8 +111,8 @@ impl Rule for UseLifecycleInterface {
             return;
         };
 
-        // Check if the class has an Angular decorator
-        if get_class_angular_decorator(class, ctx).is_none() {
+        // Check if the class has an Angular decorator (lenient: name-based, no import verification)
+        if get_class_angular_decorator_lenient(class, ctx).is_none() {
             return;
         }
 
@@ -122,7 +122,7 @@ impl Rule for UseLifecycleInterface {
         }
 
         ctx.diagnostic(use_lifecycle_interface_diagnostic(
-            method.span,
+            method.key.span(),
             &method_name,
             interface_name,
         ));

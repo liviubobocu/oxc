@@ -3,6 +3,7 @@ use oxc_ast::ast::Expression;
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::{GetSpan, Span};
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{
@@ -38,7 +39,7 @@ fn consistent_component_styles_diagnostic(span: Span, message_id: &str) -> OxcDi
     OxcDiagnostic::warn(message).with_help(help).with_label(span)
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum StyleFormat {
     #[default]
@@ -46,9 +47,10 @@ pub enum StyleFormat {
     Array
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, JsonSchema, Default)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct ConsistentComponentStylesConfig {
+    /// The preferred format for styles: "string" or "array"
     #[serde(default)]
     format: StyleFormat
 }
@@ -118,7 +120,8 @@ declare_oxc_lint!(
     ConsistentComponentStyles,
     angular,
     style,
-    pending
+    pending,
+    config = ConsistentComponentStylesConfig
 );
 
 impl Rule for ConsistentComponentStyles {

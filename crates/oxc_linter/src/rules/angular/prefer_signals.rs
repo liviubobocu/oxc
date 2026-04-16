@@ -3,6 +3,7 @@ use oxc_ast::ast::{Expression, PropertyDefinition, TSType, TSTypeName};
 use oxc_diagnostics::OxcDiagnostic;
 use oxc_macros::declare_oxc_lint;
 use oxc_span::{GetSpan, Span};
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::{AstNode, context::LintContext, rule::Rule, utils::get_decorator_name};
@@ -64,7 +65,7 @@ fn prefer_query_signals_diagnostic(
     .with_label(span)
 }
 
-#[derive(Debug, Default, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PreferSignalsConfig {
     /// Whether to check that signal properties are marked as readonly. Default: true.
@@ -90,6 +91,18 @@ pub struct PreferSignalsConfig {
     pub additional_signal_creation_functions: Vec<String>,
 }
 
+impl Default for PreferSignalsConfig {
+    fn default() -> Self {
+        Self {
+            prefer_readonly_signal_properties: true,
+            prefer_input_signals: true,
+            prefer_query_signals: true,
+            use_type_checking: false,
+            additional_signal_creation_functions: Vec::new(),
+        }
+    }
+}
+
 fn default_true() -> bool {
     true
 }
@@ -99,13 +112,7 @@ pub struct PreferSignals(Box<PreferSignalsConfig>);
 
 impl Default for PreferSignals {
     fn default() -> Self {
-        Self(Box::new(PreferSignalsConfig {
-            prefer_readonly_signal_properties: true,
-            prefer_input_signals: true,
-            prefer_query_signals: true,
-            use_type_checking: false,
-            additional_signal_creation_functions: Vec::new(),
-        }))
+        Self(Box::new(PreferSignalsConfig::default()))
     }
 }
 
@@ -152,7 +159,8 @@ declare_oxc_lint!(
     /// ```
     PreferSignals,
     angular,
-    pedantic
+    pedantic,
+    config = PreferSignalsConfig
 );
 
 impl Rule for PreferSignals {
@@ -676,14 +684,14 @@ fn test_with_options() {
     )];
 
     Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass_no_readonly, vec![])
-        .test_and_snapshot();
+        .test();
 
     Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass_no_input_signals, vec![])
-        .test_and_snapshot();
+        .test();
 
     Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, pass_no_query_signals, vec![])
-        .test_and_snapshot();
+        .test();
 
     Tester::new(PreferSignals::NAME, PreferSignals::PLUGIN, vec![], fail_additional_functions)
-        .test_and_snapshot();
+        .test();
 }
